@@ -1,0 +1,27 @@
+html, body {
+  margin: 0;
+  background: #120e0a;
+  color: #bfa45f;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.frame {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+canvas {
+  background: #0d0a08;
+  border: 2px solid #3a2e22;
+  border-radius: 4px;
+  box-shadow: 0 0 60px rgba(191, 164, 95, 0.06);
+}
+.hint {
+  font-size: 12px;
+  opacity: 0.55;
+  letter-spacing: 0.12em;
+}

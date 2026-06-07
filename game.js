@@ -1,0 +1,1490 @@
+// ════════════════════════════════════════════════════════════════════
+// THE WORST ELEVATOR  —  an elevator roguelike
+//
+//   You operate a junk lift with no floor display. Scoop passengers from
+//   the lobby, REMEMBER the floors they shouted, and drop each one off
+//   before they lose their patience. Survive a shift, earn parts, and in
+//   the shop turn the death-trap into a dream machine — every upgrade is
+//   the relief of not having to do the hard part anymore.
+// ════════════════════════════════════════════════════════════════════
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width;
+const H = canvas.height;
+
+// ─────────────────────────────────────────────────────────────── config
+
+const CFG = {
+  floorHeight: 170,
+  carWidth: 220,
+  carHeight: 132,
+  capacity: 4,            // cabin holds this many riders (base)
+  maxSpeed: 330,
+  accel: 480,             // deliberate build-up, not instant
+  brakeAccel: 620,        // reverse-crank to slow; not a crisp stop
+  coastFriction: 0.994,   // a flywheel — releasing the crank keeps momentum
+  settleFriction: 0.82,   // gentle extra drag only at a crawl, so a careful stop is possible
+  settleBelow: 9,         // speed under which settleFriction kicks in (px/s)
+  doorTime: 0.55,
+  patienceTime: 26,       // waiting patience (seconds)
+  ridePatience: 22,       // patience once aboard
+  alignTolerance: 17,
+  stopSpeed: 22,
+  rememberTime: 3.2,      // seconds a rider's floor stays "remembered"
+  strikesAllowed: 3,
+};
+
+// A pool of distinct floors. Each shift activates a prefix of this list,
+// so early shifts are short buildings and later ones are towers.
+// `acc` selects a hand-drawn landmark so you can navigate by sight.
+const FLOOR_POOL = [
+  { label: 'L',  acc: 'lobby' },
+  { label: '2',  acc: 'red' },
+  { label: '3',  acc: 'plant' },
+  { label: '4',  acc: 'fire' },
+  { label: '5',  acc: 'art' },
+  { label: '6',  acc: 'blue' },
+  { label: '7',  acc: 'crack' },
+  { label: '8',  acc: 'clock' },
+  { label: '9',  acc: 'vend' },
+  { label: '10', acc: 'green' },
+  { label: '11', acc: 'window' },
+  { label: 'PH', acc: 'penthouse' },
+];
+
+// Upgrades — the relief arc. Each removes a specific pain point.
+const UPGRADES = [
+  { key: 'autoLevel',   name: 'Auto-Leveling',  max: 1, costs: [9],
+    blurb: ['The car eases itself onto the floor when you stop nearby.'] },
+  { key: 'dispatch',    name: 'Dispatch Board',  max: 1, costs: [8],
+    blurb: ["Riders' floors stay posted. Stop trying to remember."] },
+  { key: 'floorCounter',name: 'Floor Counter',   max: 2, costs: [5, 7],
+    blurb: ['A cabin readout shows your floor — when nearly stopped.',
+            'The readout keeps up even at full speed.'] },
+  { key: 'fastDoors',   name: 'Quick Doors',     max: 2, costs: [4, 6],
+    blurb: ['Doors cycle 35% faster.', 'Doors cycle 60% faster.'] },
+  { key: 'motor',       name: 'Rebuilt Motor',   max: 2, costs: [5, 7],
+    blurb: ['More top speed and quicker pickup.', 'Even more top speed.'] },
+  { key: 'brakes',      name: 'Regen Brakes',    max: 1, costs: [5],
+    blurb: ['Far stronger braking. Overshoot less.'] },
+  { key: 'cushions',    name: 'Plush Cabin',     max: 2, costs: [4, 6],
+    blurb: ['Passengers wait longer before fuming.',
+            'Passengers are downright patient.'] },
+  { key: 'capacity',    name: 'Bigger Cabin',    max: 2, costs: [6, 8],
+    blurb: ['Carry one more passenger.', 'Carry two more passengers.'] },
+];
+
+// ──────────────────────────────────────────────────────── career / run
+
+let run;     // persists across shifts within one career
+let game;    // per-shift state
+let shop;    // shop screen state
+let menu = null;   // out-of-run overlay screen ('WORKSHOP'); null = follow game.state
+
+// ── persistent profile across ALL runs (the Workshop / meta-progression) ──
+// ★ stars are earned every run and spent on permanent perks that make each
+// new career start a little less hopeless. This is the long-game replay loop.
+const META = [
+  { key: 'severance',     name: 'Severance Pay',    max: 3, costs: [3, 5, 8],
+    blurb: ['Clock in with ◆5 already in pocket.', 'Clock in with ◆10.', 'Clock in with ◆15.'] },
+  { key: 'footInDoor',    name: 'Foot in the Door', max: 3, costs: [4, 7, 11],
+    blurb: ['Start each run with a Floor Counter fitted.',
+            '…and Quick Doors.', '…and Auto-Leveling, too.'] },
+  { key: 'roomierStart',  name: 'Roomier Cabin',    max: 2, costs: [5, 8],
+    blurb: ['Start every run carrying +1 passenger.', 'Start every run carrying +2.'] },
+  { key: 'unionCard',     name: 'Union Card',       max: 1, costs: [9],
+    blurb: ['One extra strike before they fire you.'] },
+  { key: 'frequentFlyer', name: 'Frequent Flyer',   max: 1, costs: [8],
+    blurb: ['Every fare you complete pays +1 ◆.'] },
+  { key: 'reputation',    name: 'Reputation',       max: 2, costs: [4, 7],
+    blurb: ['VIP passengers turn up more often.', 'VIPs turn up much more often.'] },
+  { key: 'knownAssociate',name: 'Known Associate',  max: 2, costs: [5, 8],
+    blurb: ['The Spider Floor opens more often.', '…and its web pays out faster.'] },
+];
+
+function defaultSave() {
+  return {
+    stars: 0,
+    meta: { severance: 0, footInDoor: 0, roomierStart: 0, unionCard: 0,
+            frequentFlyer: 0, reputation: 0, knownAssociate: 0 },
+    best: { shifts: 0, delivered: 0 },
+  };
+}
+function loadSave() {
+  const def = defaultSave();
+  try {
+    const s = JSON.parse(localStorage.getItem('worstElevatorSave'));
+    if (!s) return def;
+    return { ...def, ...s, meta: { ...def.meta, ...(s.meta || {}) }, best: { ...def.best, ...(s.best || {}) } };
+  } catch (e) { return def; }
+}
+function persist() { try { localStorage.setItem('worstElevatorSave', JSON.stringify(save)); } catch (e) {} }
+let save = loadSave();
+
+function maxStrikes() { return CFG.strikesAllowed + save.meta.unionCard; }
+
+function newRun() {
+  const meta = save.meta;
+  const up = { autoLevel: 0, dispatch: 0, floorCounter: 0, fastDoors: 0,
+               motor: 0, brakes: 0, cushions: 0, capacity: 0 };
+  // "Foot in the Door" pre-fits relief upgrades so the early grind is shorter
+  if (meta.footInDoor >= 1) up.floorCounter = 1;
+  if (meta.footInDoor >= 2) up.fastDoors = 1;
+  if (meta.footInDoor >= 3) up.autoLevel = 1;
+  return {
+    up,
+    parts: [0, 5, 10, 15][meta.severance],
+    shiftNum: 0,
+    totalDelivered: 0,
+    fuses: 0,          // consumable: each forgives one walk-off
+  };
+}
+
+// Effective stats given current upgrades.
+function mods() {
+  const u = run.up;
+  return {
+    maxSpeed:   CFG.maxSpeed   * [1, 1.28, 1.55][u.motor],
+    accel:      CFG.accel      * [1, 1.20, 1.40][u.motor],
+    brakeAccel: CFG.brakeAccel * [1, 1.85][u.brakes],
+    doorTime:   CFG.doorTime   * [1, 0.65, 0.40][u.fastDoors],
+    patience:   CFG.patienceTime * [1, 1.30, 1.60][u.cushions],
+    ridePat:    CFG.ridePatience * [1, 1.30, 1.60][u.cushions],
+    capacity:   CFG.capacity + [0, 1, 2][u.capacity] + [0, 1, 2][save.meta.roomierStart],
+    autoLevel:  u.autoLevel >= 1,
+    floorCounter: u.floorCounter,   // 0,1,2
+    dispatch:   u.dispatch >= 1,
+  };
+}
+
+// Shift parameters scale with shift number.
+function shiftParams(n) {
+  const floors = Math.min(FLOOR_POOL.length, 5 + Math.floor(n / 2)); // 5 → 12
+  const quota  = 5 + n * 2;
+  const spawn  = Math.max(2.0, 5.0 - n * 0.35);   // seconds between arrivals
+  const patMul = Math.max(0.6, 1 - n * 0.05);     // patience squeeze
+  return { floors, quota, spawn, patMul };
+}
+
+function startShift() {
+  menu = null;
+  run.shiftNum++;
+  const sp = shiftParams(run.shiftNum);
+  const active = FLOOR_POOL.slice(0, sp.floors);
+  const m = mods();
+  game = {
+    state: 'PLAYING',
+    t: 0,
+    floors: active,
+    elev: { y: 0, v: 0, doors: 1, doorTarget: 1, jamFlash: 0, wasReady: false },
+    passengers: [],
+    nextId: 1,
+    spawnTimer: 1.2,
+    spawnInterval: sp.spawn,
+    patMul: sp.patMul,
+    quota: sp.quota,
+    delivered: 0,
+    partsThisShift: 0,
+    strikes: 0,
+    shake: 0,
+    flash: null,
+    shiftTime: 0,
+    banner: null,
+    power: { express: 0, freeze: 0, xray: 0, magnet: 0, double: 0 },
+    // the legendary Spider Floor opens below the lobby for a brief window
+    spider: { open: false, used: false,
+              cooldown: (9 + Math.random() * 9) * (1 - 0.25 * save.meta.knownAssociate), window: 0, glow: 0 },
+    spiderGame: null,
+    m,
+  };
+}
+
+const SPIDER_Y = -CFG.floorHeight;   // one floor below the lobby
+
+// Temporary power-ups — tipped by VIP passengers, decay over time.
+const POWERS = {
+  express: { name: 'EXPRESS',     dur: 12, color: '#5ad0ff' },
+  freeze:  { name: 'COOL HEADS',  dur: 14, color: '#9ad4ff' },
+  xray:    { name: 'X-RAY MEMORY',dur: 12, color: '#c89aff' },
+  magnet:  { name: 'DOOR MAGNET', dur: 12, color: '#7aff9a' },
+  double:  { name: 'DOUBLE FARE', dur: 14, color: '#ffd44a' },
+};
+function grantPower() {
+  const keys = Object.keys(POWERS);
+  const k = keys[Math.floor(Math.random() * keys.length)];
+  game.power[k] = POWERS[k].dur;
+  game.banner = { text: `★ ${POWERS[k].name} ★`, t: 1.6, color: POWERS[k].color };
+  sfx.power();
+}
+
+function endShift(reason) {
+  // reason: 'quota' (survived) or 'fired'
+  if (reason === 'quota') {
+    const bonus = 3 + Math.max(0, maxStrikes() - game.strikes);
+    game.bonus = bonus;
+    run.parts += bonus;
+    game.state = 'SHIFT_DONE';
+    game.doneT = 0;
+    sfx.fanfare();
+  } else {
+    // bank the run: earn ★ stars for the Workshop and update the high-water mark
+    const survived = run.shiftNum - 1;
+    const earned = survived * 2 + Math.floor(run.totalDelivered / 4);
+    game.starsEarned = earned;
+    save.stars += earned;
+    save.best.shifts = Math.max(save.best.shifts, survived);
+    save.best.delivered = Math.max(save.best.delivered, run.totalDelivered);
+    persist();
+    game.state = 'FIRED';
+    game.doneT = 0;
+    sfx.fired();
+  }
+}
+
+// ──────────────────────────────────────────────────────────────── input
+
+const keys = new Set();
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k === ' ' || k === 'arrowup' || k === 'arrowdown' || k === 'arrowleft' ||
+      k === 'arrowright') e.preventDefault();
+  sfx.resume();
+  if (!e.repeat) handleKey(k);
+  keys.add(k);
+});
+window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
+
+function handleKey(k) {
+  const st = menu || (game ? game.state : 'TITLE');
+
+  if (st === 'WORKSHOP') {
+    if (k === 'enter' || k === 'escape' || k === 'm') { menu = null; return; }
+    if (k >= '1' && k <= '9') { const i = parseInt(k, 10) - 1; if (i < META.length) buyMeta(META[i]); }
+    return;
+  }
+  if (st === 'TITLE') {
+    if (k === ' ' || k === 'enter') { run = newRun(); startShift(); }
+    if (k === 'm') { menu = 'WORKSHOP'; }
+    return;
+  }
+  if (st === 'FIRED') {
+    if (k === ' ' || k === 'enter') { menu = null; game.state = 'TITLE'; }
+    if (k === 'm') { menu = 'WORKSHOP'; }
+    return;
+  }
+  if (st === 'SHIFT_DONE') {
+    if (k === ' ' || k === 'enter') openShop();
+    return;
+  }
+  if (st === 'SHOP') {
+    if (k === 'enter') { startShift(); return; }
+    if (k >= '1' && k <= '8') {
+      const i = parseInt(k, 10) - 1;
+      if (i < UPGRADES.length) buyUpgrade(UPGRADES[i]);
+    }
+    if (k === '9' || k === '0') buyFuse();
+    return;
+  }
+  if (st === 'PLAYING') {
+    if (k === ' ') toggleDoors();
+    if (k === 'r') { run = newRun(); startShift(); }
+  }
+}
+
+function toggleDoors() {
+  const e = game.elev;
+  if (Math.abs(e.v) > CFG.stopSpeed) { jam(); return; }
+  if (e.doorTarget === 0) {
+    if (!isAligned()) { jam(); return; }
+    e.doorTarget = 1;
+    sfx.door();
+  } else {
+    e.doorTarget = 0;
+    sfx.door();
+  }
+}
+function jam() {
+  game.elev.jamFlash = 0.35;
+  flash('#aa3a32', 0.18);
+  shake(5);
+  sfx.buzz();
+}
+
+// ── mouse (title / shop / done buttons) ──
+const buttons = [];   // {x,y,w,h,fn} rebuilt each render for clickable screens
+canvas.addEventListener('click', ev => {
+  sfx.resume();
+  const r = canvas.getBoundingClientRect();
+  const mx = (ev.clientX - r.left) * (W / r.width);
+  const my = (ev.clientY - r.top) * (H / r.height);
+  for (const b of buttons) {
+    if (mx >= b.x && mx <= b.x + b.w && my >= b.y && my <= b.y + b.h) { b.fn(); return; }
+  }
+});
+
+// ────────────────────────────────────────────────────────────── helpers
+
+function activeMaxIdx() { return game.floors.length - 1; }
+function nearestFloorIdx(y) {
+  return Math.max(0, Math.min(activeMaxIdx(), Math.round(y / CFG.floorHeight)));
+}
+function isAligned() {
+  if (game.spider && game.spider.open &&
+      Math.abs(game.elev.y - SPIDER_Y) < CFG.alignTolerance) return true;
+  const i = nearestFloorIdx(game.elev.y);
+  return Math.abs(game.elev.y - i * CFG.floorHeight) < CFG.alignTolerance;
+}
+function isStopped() { return Math.abs(game.elev.v) < CFG.stopSpeed; }
+function doorsOpen() { return game.elev.doors > 0.92; }
+function flash(color, t = 0.25) { game.flash = { color, t, max: t }; }
+function shake(amt) { game.shake = Math.max(game.shake, amt); }
+function ridersAboard() { return game.passengers.filter(p => p.state === 'riding').length; }
+
+function spawnPassenger() {
+  const dests = [];
+  for (let i = 1; i <= activeMaxIdx(); i++) dests.push(i);
+  const dest = dests[Math.floor(Math.random() * dests.length)];
+  const pat = game.m.patience * game.patMul;
+  game.passengers.push({
+    id: game.nextId++,
+    dest,
+    state: 'waiting',
+    patience: pat,
+    patienceMax: pat,
+    reveal: 0,           // remember-timer once aboard
+    bob: Math.random() * Math.PI * 2,
+    skin: Math.floor(Math.random() * 4),
+    coat: Math.floor(Math.random() * 5),
+    hat: Math.random() < 0.4 ? Math.floor(Math.random() * 3) : -1,
+    vip: Math.random() < 0.16 * (1 + 0.6 * save.meta.reputation),   // golden riders tip a power-up
+    x: 0, tx: 0,         // smoothed screen x for shuffling in line
+  });
+}
+
+// ────────────────────────────────────────────────────────────── update
+
+function update(dt) {
+  if (game && game.flash) { game.flash.t -= dt; if (game.flash.t <= 0) game.flash = null; }
+  if (game && game.shake > 0) game.shake = Math.max(0, game.shake - dt * 25);
+  if (game && game.elev) game.elev.jamFlash = Math.max(0, game.elev.jamFlash - dt);
+  if (game && game.banner) { game.banner.t -= dt; if (game.banner.t <= 0) game.banner = null; }
+  if (game && (game.state === 'SHIFT_DONE' || game.state === 'FIRED')) game.doneT += dt;
+
+  if (game && game.state === 'SPIDER') { updateSpider(dt); return; }
+  if (!game || game.state !== 'PLAYING') return;
+  game.t += dt;
+  game.shiftTime += dt;
+  const e = game.elev;
+  const m = game.m;
+
+  // ── Spider Floor: opens for a window, then the webs recede ──
+  const sp = game.spider;
+  if (sp.glow > 0 && !sp.open) sp.glow = Math.max(0, sp.glow - dt);
+  if (!sp.open && !sp.used) {
+    sp.cooldown -= dt;
+    if (sp.cooldown <= 0 && run.shiftNum >= 2 && game.delivered < game.quota - 1) {
+      sp.open = true; sp.window = 13;
+      game.banner = { text: '▓ THE SPIDER FLOOR IS OPEN — CRANK BELOW THE LOBBY ▓', t: 2.4, color: '#b46adc' };
+      sfx.spider();
+    }
+  } else if (sp.open) {
+    sp.glow = Math.min(1, sp.glow + dt * 3);
+    sp.window -= dt;
+    if (sp.window <= 0) { sp.open = false; sp.used = true; }
+  }
+
+  // ── active power-ups decay; fold their effects into this frame ──
+  for (const k in game.power) if (game.power[k] > 0) game.power[k] = Math.max(0, game.power[k] - dt);
+  const expr   = game.power.express > 0;
+  const maxS   = m.maxSpeed * (expr ? 1.55 : 1);
+  const accelE = m.accel    * (expr ? 1.40 : 1);
+  const patDrain = game.power.freeze > 0 ? 0.30 : 1;
+  const autoLevelOn = m.autoLevel || game.power.magnet > 0;
+
+  // ── motion ──
+  const canMove = e.doors < 0.02 && e.doorTarget === 0;
+  let input = 0;
+  if (canMove) {
+    if (keys.has('arrowup') || keys.has('w')) input += 1;
+    if (keys.has('arrowdown') || keys.has('s')) input -= 1;
+  }
+  if (input !== 0) {
+    // cranking with the grain accelerates; against it, the reverse-crank brakes
+    const braking = Math.sign(input) !== Math.sign(e.v) && Math.abs(e.v) > 1;
+    e.v += input * (braking ? m.brakeAccel : accelE) * dt;
+  } else {
+    // no input: a heavy flywheel. Barely any drag, so momentum carries you —
+    // letting go does NOT stop you. Only a crawl gets a little settling help.
+    e.v *= Math.pow(CFG.coastFriction, dt * 60);
+    if (Math.abs(e.v) < CFG.settleBelow) e.v *= Math.pow(CFG.settleFriction, dt * 60);
+    if (Math.abs(e.v) < 0.6) e.v = 0;
+  }
+  e.v = Math.max(-maxS, Math.min(maxS, e.v));
+
+  // auto-leveling: when coasting slowly near a floor, the car finds it
+  if (autoLevelOn && input === 0 && Math.abs(e.v) < 140) {
+    const i = nearestFloorIdx(e.y);
+    const target = i * CFG.floorHeight;
+    const d = target - e.y;
+    if (Math.abs(d) < CFG.floorHeight * 0.45) {
+      e.y += d * Math.min(1, 9 * dt);
+      e.v *= Math.pow(0.55, dt * 60);
+      if (Math.abs(d) < 0.6 && Math.abs(e.v) < 6) { e.y = target; e.v = 0; }
+    }
+  }
+  e.y += e.v * dt;
+
+  const minY = sp.open ? SPIDER_Y : 0;       // the shaft only opens downward when the webs do
+  const maxY = activeMaxIdx() * CFG.floorHeight;
+  if (e.y < minY) { if (e.v < -40) { shake(Math.min(8, -e.v / 30)); sfx.thud(); } e.y = minY; e.v = 0; }
+  if (e.y > maxY) { if (e.v >  40) { shake(Math.min(8,  e.v / 30)); sfx.thud(); } e.y = maxY; e.v = 0; }
+
+  // doors
+  const rate = 1 / m.doorTime;
+  if (e.doors < e.doorTarget) e.doors = Math.min(1, e.doors + rate * dt);
+  if (e.doors > e.doorTarget) e.doors = Math.max(0, e.doors - rate * dt);
+
+  // "ready" ding on the rising edge of aligned+stopped
+  const ready = isAligned() && isStopped();
+  if (ready && !e.wasReady) sfx.ding();
+  e.wasReady = ready;
+
+  // step off into the Spider Floor: park at the webbed depth and open up
+  if (sp.open && Math.abs(e.y - SPIDER_Y) < CFG.alignTolerance && isStopped() && doorsOpen()) {
+    enterSpider(); return;
+  }
+
+  // ── spawns ──
+  game.spawnTimer -= dt;
+  const lobbyWaiting = game.passengers.filter(p => p.state === 'waiting').length;
+  if (game.spawnTimer <= 0 && lobbyWaiting < 7) {
+    spawnPassenger();
+    game.spawnTimer = game.spawnInterval * (0.8 + Math.random() * 0.4);
+  }
+
+  // ── passengers ──
+  const ci = nearestFloorIdx(e.y);
+  const aligned = isAligned();
+  const open = doorsOpen();
+  const cap = m.capacity;
+
+  // board: at lobby, aligned, open, with room — FIFO by arrival
+  if (ci === 0 && aligned && open) {
+    const waiting = game.passengers.filter(p => p.state === 'waiting');
+    for (const p of waiting) {
+      if (ridersAboard() >= cap) break;
+      p.state = 'riding';
+      p.reveal = CFG.rememberTime;
+      sfx.board();
+    }
+  }
+
+  for (const p of game.passengers) {
+    p.bob += dt * 2.2;
+    if (p.state === 'waiting') {
+      p.patience -= dt * patDrain;
+      if (p.patience <= 0) losePassenger(p);
+    } else if (p.state === 'riding') {
+      p.patience -= dt * patDrain;
+      if (p.reveal > 0) p.reveal -= dt;
+      if (open && aligned && ci === p.dest) {
+        p.state = 'delivered';
+        p.removeAt = game.t + 0.45;
+        game.delivered++;
+        run.totalDelivered++;
+        const fare = (game.power.double > 0 ? 2 : 1) + save.meta.frequentFlyer;
+        run.parts += fare;
+        game.partsThisShift += fare;
+        flash(p.vip ? '#ffd44a' : '#7aaa55', 0.18);
+        sfx.chime();
+        if (p.vip) grantPower();   // VIPs tip a temporary boon
+      } else if (p.patience <= 0) {
+        losePassenger(p);
+      }
+    }
+  }
+  game.passengers = game.passengers.filter(p => {
+    if (p.state === 'delivered' || p.state === 'left') return (p.removeAt ?? 0) > game.t;
+    return true;
+  });
+
+  if (game.strikes >= maxStrikes()) { endShift('fired'); return; }
+  if (game.delivered >= game.quota) { endShift('quota'); return; }
+}
+
+function losePassenger(p) {
+  p.state = 'left';
+  p.removeAt = game.t + 0.7;
+  if (run.fuses > 0) {           // a Spare Fuse eats the strike
+    run.fuses--;
+    flash('#d4a050', 0.3);
+    shake(4);
+    sfx.buzz();
+    game.banner = { text: 'WALK-OFF — SPARE FUSE BLOWN', t: 1.4, color: '#d4a050' };
+    return;
+  }
+  game.strikes++;
+  flash('#aa3a32');
+  shake(7);
+  sfx.buzz();
+  game.banner = { text: 'PASSENGER WALKED OFF', t: 1.2, color: '#aa3a32' };
+}
+
+// ────────────────────────────────────────────────────────── Spider Floor
+// A press-your-luck vignette. Cocooned parts hang in the web; grab as many
+// as you dare while the spider creeps down its thread. Bolt back to the lift
+// in time to bank them — linger too long and it drops on you: lose the lot
+// and take a strike.
+
+function enterSpider() {
+  game.state = 'SPIDER';
+  game.spiderGame = { descent: 0, pile: 0, t: 0,
+                      grabRate: 3.6 * (1 + 0.35 * save.meta.knownAssociate),
+                      result: null, exitT: 0, sway: 0, grabTick: 0, snap: 0 };
+  sfx.spider();
+}
+
+function updateSpider(dt) {
+  const sg = game.spiderGame;
+  if (!sg) { game.state = 'PLAYING'; return; }
+  sg.t += dt;
+  sg.sway += dt * 2.6;
+  if (sg.snap > 0) sg.snap -= dt;
+
+  if (sg.result) { sg.exitT += dt; if (sg.exitT > 1.5) exitSpider(); return; }
+
+  const descTime = Math.max(5.5, 9 - run.shiftNum * 0.25);
+  let speed = 1 / descTime;
+  const grabbing = keys.has(' ');
+  if (grabbing) {
+    sg.pile += sg.grabRate * dt;
+    speed *= 1.5;                       // greed draws it down faster
+    sg.grabTick -= dt;
+    if (sg.grabTick <= 0) { sfx.grab(); sg.grabTick = 0.13; }
+  }
+  sg.descent += speed * dt;
+
+  if ((keys.has('arrowup') || keys.has('w')) && sg.pile > 0) {
+    sg.result = 'banked'; sg.snap = 0.4; sfx.chime();
+    return;
+  }
+  if (sg.descent >= 1) {
+    sg.descent = 1; sg.result = 'caught'; shake(10); sfx.caught();
+  }
+}
+
+function exitSpider() {
+  const sg = game.spiderGame;
+  if (sg.result === 'banked') {
+    const got = Math.floor(sg.pile);
+    run.parts += got; game.partsThisShift += got;
+    game.banner = { text: `BANKED +${got} ◆ FROM THE WEB`, t: 2.0, color: '#ffd44a' };
+  } else { // caught
+    game.strikes++;
+    game.banner = { text: 'THE SPIDER GOT YOU — STRIKE!', t: 2.0, color: '#aa3a32' };
+    flash('#5a1a4a', 0.4);
+  }
+  // climb back up to the lobby; the webbed floor seals behind you
+  game.spider.open = false; game.spider.used = true; game.spider.glow = 0;
+  const e = game.elev;
+  e.y = 0; e.v = 0; e.doors = 1; e.doorTarget = 1; e.wasReady = false;
+  game.spiderGame = null;
+  game.state = 'PLAYING';
+}
+
+// ──────────────────────────────────────────────────────────────── shop
+
+function openShop() {
+  shop = {};
+  game.state = 'SHOP';
+}
+function buyUpgrade(u) {
+  const lvl = run.up[u.key];
+  if (lvl >= u.max) { sfx.buzz(); return; }
+  const cost = u.costs[lvl];
+  if (run.parts < cost) { sfx.buzz(); return; }
+  run.parts -= cost;
+  run.up[u.key]++;
+  sfx.buy();
+}
+const FUSE_COST = 6;
+function buyFuse() {
+  if (run.parts < FUSE_COST) { sfx.buzz(); return; }
+  run.parts -= FUSE_COST;
+  run.fuses++;
+  sfx.buy();
+}
+// permanent Workshop perks, bought with ★ stars; saved to disk immediately
+function buyMeta(m) {
+  const lvl = save.meta[m.key];
+  if (lvl >= m.max) { sfx.buzz(); return; }
+  const cost = m.costs[lvl];
+  if (save.stars < cost) { sfx.buzz(); return; }
+  save.stars -= cost;
+  save.meta[m.key]++;
+  persist();
+  sfx.buy();
+}
+
+// ════════════════════════════════════════════════════════════ RENDER
+
+const SHAFT_LEFT = 230;
+const SHAFT_RIGHT = 480;
+const ROOM_LEFT = SHAFT_RIGHT;
+const ROOM_RIGHT = 870;
+const CENTER_Y = H / 2 + 10;
+
+function worldToScreen(wy) { return CENTER_Y - (wy - game.elev.y); }
+
+function render() {
+  buttons.length = 0;
+  const sh = (game && game.shake) || 0;
+  const sx = (Math.random() - 0.5) * sh;
+  const sy = (Math.random() - 0.5) * sh;
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.fillStyle = '#0d0a08';
+  ctx.fillRect(-20, -20, W + 40, H + 40);
+
+  const st = menu || (game ? game.state : 'TITLE');
+  if (st === 'WORKSHOP')   drawWorkshop();
+  else if (st === 'TITLE') drawTitle();
+  else if (st === 'SHOP')  drawShop();
+  else if (st === 'SPIDER') drawSpider();
+  else {
+    drawBuilding();
+    drawCar();
+    drawHUD();
+    if (game.flash) {
+      ctx.fillStyle = game.flash.color;
+      ctx.globalAlpha = (game.flash.t / game.flash.max) * 0.5;
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
+    if (game.banner) drawBanner();
+    if (st === 'SHIFT_DONE') drawShiftDone();
+    if (st === 'FIRED') drawFired();
+  }
+  ctx.restore();
+}
+
+function drawBuilding() {
+  ctx.fillStyle = '#2a1f17';
+  ctx.fillRect(0, 0, SHAFT_LEFT, H);
+  ctx.fillRect(ROOM_RIGHT, 0, W - ROOM_RIGHT, H);
+  ctx.fillStyle = '#241a13';
+  for (let y = 0; y < H; y += 30) {
+    const off = (Math.floor(y / 30) % 2) * 30;
+    for (let x = 0; x < SHAFT_LEFT; x += 60) ctx.fillRect(x + off, y, 28, 28);
+    for (let x = ROOM_RIGHT; x < W; x += 60) ctx.fillRect(x + off, y, 28, 28);
+  }
+  // shaft
+  ctx.fillStyle = '#070504';
+  ctx.fillRect(SHAFT_LEFT, 0, SHAFT_RIGHT - SHAFT_LEFT, H);
+  ctx.strokeStyle = '#1a1410';
+  ctx.lineWidth = 2;
+  for (const x of [SHAFT_LEFT + 14, SHAFT_RIGHT - 14]) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+
+  for (const f of game.floors) drawFloor(f, worldToScreen(game.floors.indexOf(f) * CFG.floorHeight));
+
+  // the Spider Floor landing, glowing below the lobby when the webs are open
+  if (game.spider.glow > 0) drawSpiderLanding(worldToScreen(SPIDER_Y));
+
+  ctx.strokeStyle = '#15100c';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < game.floors.length; i++) {
+    const sy = worldToScreen(i * CFG.floorHeight - CFG.floorHeight / 2);
+    ctx.beginPath(); ctx.moveTo(SHAFT_LEFT, sy); ctx.lineTo(SHAFT_RIGHT, sy); ctx.stroke();
+  }
+
+  // downward "go here" arrow when the floor is open and you're above it
+  if (game.spider.open) {
+    const a = 0.4 + 0.4 * Math.sin(game.t * 5);
+    const ax = (SHAFT_LEFT + SHAFT_RIGHT) / 2;
+    const ay = Math.min(H - 70, worldToScreen(SPIDER_Y) - 90);
+    ctx.fillStyle = `rgba(180,106,220,${a})`;
+    ctx.beginPath();
+    ctx.moveTo(ax - 12, ay); ctx.lineTo(ax + 12, ay); ctx.lineTo(ax, ay + 16);
+    ctx.closePath(); ctx.fill();
+  }
+}
+
+function drawSpiderLanding(sy) {
+  const g = game.spider.glow;
+  const top = sy - CFG.floorHeight / 2, bot = sy + CFG.floorHeight / 2;
+  // dark webbed room on the lobby side
+  ctx.fillStyle = '#140c14';
+  ctx.fillRect(ROOM_LEFT, top, ROOM_RIGHT - ROOM_LEFT, CFG.floorHeight);
+  ctx.fillStyle = `rgba(90,30,90,${0.18 * g})`;
+  ctx.fillRect(ROOM_LEFT, top, ROOM_RIGHT - ROOM_LEFT, CFG.floorHeight);
+  ctx.fillStyle = '#241018';
+  ctx.fillRect(ROOM_LEFT, bot - 8, ROOM_RIGHT - ROOM_LEFT, 8);
+
+  // cobwebs in the corners
+  ctx.strokeStyle = `rgba(180,160,190,${0.4 * g})`;
+  ctx.lineWidth = 1;
+  for (const [ox, dir] of [[ROOM_LEFT + 6, 1], [ROOM_RIGHT - 6, -1]]) {
+    for (let r = 12; r < 80; r += 14) {
+      ctx.beginPath(); ctx.moveTo(ox, top + 6); ctx.lineTo(ox + dir * r, top + 6 + r); ctx.stroke();
+    }
+    for (let k = 1; k <= 4; k++) {
+      ctx.beginPath();
+      ctx.moveTo(ox + dir * (k * 16), top + 6);
+      ctx.lineTo(ox, top + 6 + k * 16); ctx.stroke();
+    }
+  }
+  // a couple of glowing eyes in the dark
+  const ex = (ROOM_LEFT + ROOM_RIGHT) / 2 + 30;
+  ctx.fillStyle = `rgba(220,60,120,${0.7 * g})`;
+  ctx.beginPath(); ctx.arc(ex - 6, sy, 3, 0, 7); ctx.arc(ex + 6, sy, 3, 0, 7); ctx.fill();
+  ctx.fillStyle = `rgba(180,106,220,${g})`;
+  ctx.font = 'bold 13px ui-monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('? ? ?', ROOM_LEFT + 90, sy - 44);
+
+  // glowing shaft opening
+  ctx.fillStyle = `rgba(90,20,80,${0.5 * g})`;
+  ctx.fillRect(SHAFT_LEFT, top, SHAFT_RIGHT - SHAFT_LEFT, CFG.floorHeight);
+}
+
+function drawFloor(f, sy) {
+  const idx = game.floors.indexOf(f);
+  const top = sy - CFG.floorHeight / 2;
+  const bot = sy + CFG.floorHeight / 2;
+  if (bot < -40 || top > H + 40) return;
+
+  ctx.fillStyle = '#1d160f';
+  ctx.fillRect(ROOM_LEFT, top, ROOM_RIGHT - ROOM_LEFT, CFG.floorHeight);
+  ctx.fillStyle = '#3a2a1c';
+  ctx.fillRect(ROOM_LEFT, bot - 8, ROOM_RIGHT - ROOM_LEFT, 8);
+  ctx.fillStyle = '#0f0b07';
+  ctx.fillRect(ROOM_LEFT, top, ROOM_RIGHT - ROOM_LEFT, 6);
+
+  // no painted floor number — you navigate by the landmark alone (the building
+  // has no display). The Floor Counter upgrade is the only way to read a number.
+  drawLandmark(f, (ROOM_LEFT + ROOM_RIGHT) / 2 + 40, sy);
+
+  ctx.strokeStyle = '#3a2a1c';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(ROOM_LEFT + 4, top + 8, 60, CFG.floorHeight - 16);
+
+  if (idx === 0) {
+    const waiting = game.passengers.filter(p => p.state === 'waiting');
+    let px = ROOM_LEFT + 96;
+    for (const p of waiting) {
+      p.tx = px;
+      p.x = p.x ? p.x + (p.tx - p.x) * 0.2 : p.tx;
+      drawPassenger(p, p.x, bot - 8, 'waiting');
+      px += 52;
+      if (px > ROOM_RIGHT - 24) break;
+    }
+  }
+}
+
+function drawLandmark(f, x, y) {
+  ctx.save();
+  switch (f.acc) {
+    case 'lobby':
+      ctx.fillStyle = '#5a4530'; ctx.fillRect(x - 80, y + 48, 160, 6);
+      ctx.fillStyle = '#bfa45f'; ctx.font = 'bold 14px ui-monospace'; ctx.textAlign = 'center';
+      ctx.fillText('★ LOBBY ★', x, y + 30);
+      ctx.fillStyle = '#5a3a20'; ctx.fillRect(x - 92, y + 30, 14, 18);
+      ctx.fillStyle = '#3a5a28'; ctx.beginPath(); ctx.arc(x - 85, y + 22, 11, 0, 7); ctx.fill();
+      break;
+    case 'red':
+      ctx.fillStyle = '#7a2418'; ctx.fillRect(x, y - 40, 60, 80);
+      ctx.fillStyle = '#bfa45f'; ctx.beginPath(); ctx.arc(x + 50, y, 3, 0, 7); ctx.fill();
+      break;
+    case 'plant':
+      ctx.fillStyle = '#5a3a20'; ctx.fillRect(x + 10, y + 20, 36, 36);
+      ctx.fillStyle = '#3a5a28'; ctx.beginPath(); ctx.ellipse(x + 28, y + 5, 26, 32, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#4a6a30'; ctx.beginPath(); ctx.ellipse(x + 18, y - 8, 14, 18, 0.3, 0, 7); ctx.fill();
+      break;
+    case 'fire':
+      ctx.fillStyle = '#882018'; ctx.fillRect(x + 20, y + 5, 22, 50);
+      ctx.fillStyle = '#1a1410'; ctx.fillRect(x + 24, y - 4, 14, 10);
+      ctx.fillStyle = '#bfa45f'; ctx.fillRect(x + 22, y + 18, 18, 4);
+      break;
+    case 'art':
+      ctx.fillStyle = '#3a2a1c'; ctx.fillRect(x - 10, y - 40, 70, 56);
+      ctx.fillStyle = '#604070'; ctx.fillRect(x - 5, y - 35, 60, 46);
+      ctx.fillStyle = '#a08060'; ctx.fillRect(x + 5, y - 18, 18, 22);
+      ctx.fillStyle = '#d4a050'; ctx.beginPath(); ctx.arc(x + 35, y - 22, 5, 0, 7); ctx.fill();
+      break;
+    case 'blue':
+      ctx.fillStyle = '#1a3a7a'; ctx.fillRect(x, y - 40, 60, 80);
+      ctx.fillStyle = '#bfa45f'; ctx.beginPath(); ctx.arc(x + 50, y, 3, 0, 7); ctx.fill();
+      break;
+    case 'crack':
+      ctx.fillStyle = '#3a2a1c'; ctx.fillRect(x + 10, y - 50, 40, 100);
+      ctx.strokeStyle = '#0d0a08'; ctx.lineWidth = 2; ctx.beginPath();
+      ctx.moveTo(x + 30, y - 50); ctx.lineTo(x + 42, y - 28); ctx.lineTo(x + 22, y - 8);
+      ctx.lineTo(x + 38, y + 18); ctx.lineTo(x + 24, y + 42); ctx.stroke();
+      break;
+    case 'clock':
+      ctx.strokeStyle = '#bfa45f'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(x + 28, y - 6, 24, 0, 7); ctx.stroke();
+      ctx.lineWidth = 2; ctx.beginPath();
+      ctx.moveTo(x + 28, y - 6); ctx.lineTo(x + 28, y - 24);
+      ctx.moveTo(x + 28, y - 6); ctx.lineTo(x + 42, y - 6); ctx.stroke();
+      break;
+    case 'vend':
+      ctx.fillStyle = '#244a3a'; ctx.fillRect(x + 6, y - 44, 44, 88);
+      ctx.fillStyle = '#0d0a08'; ctx.fillRect(x + 12, y - 38, 22, 50);
+      ctx.fillStyle = '#d4a050'; ctx.fillRect(x + 38, y - 30, 8, 30);
+      for (let i = 0; i < 3; i++) { ctx.fillStyle = '#7aaa55'; ctx.fillRect(x + 15, y - 34 + i * 14, 16, 8); }
+      break;
+    case 'green':
+      ctx.fillStyle = '#2a5a2a'; ctx.fillRect(x, y - 40, 60, 80);
+      ctx.fillStyle = '#bfa45f'; ctx.beginPath(); ctx.arc(x + 50, y, 3, 0, 7); ctx.fill();
+      break;
+    case 'window':
+      ctx.fillStyle = '#22344a'; ctx.fillRect(x, y - 46, 64, 92);
+      ctx.strokeStyle = '#3a2a1c'; ctx.lineWidth = 3;
+      ctx.strokeRect(x, y - 46, 64, 92);
+      ctx.beginPath(); ctx.moveTo(x + 32, y - 46); ctx.lineTo(x + 32, y + 46);
+      ctx.moveTo(x, y); ctx.lineTo(x + 64, y); ctx.stroke();
+      ctx.fillStyle = 'rgba(212,180,120,0.25)';
+      ctx.beginPath(); ctx.moveTo(x + 4, y - 42); ctx.lineTo(x + 28, y - 42); ctx.lineTo(x + 4, y - 8); ctx.fill();
+      break;
+    case 'penthouse':
+      ctx.fillStyle = '#bfa45f'; ctx.font = 'bold 22px ui-monospace'; ctx.textAlign = 'center';
+      ctx.fillText('✦ PH ✦', x + 30, y);
+      ctx.strokeStyle = '#bfa45f'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x - 20, y + 26); ctx.lineTo(x + 80, y + 26); ctx.stroke();
+      for (let i = -2; i <= 2; i++) { ctx.fillStyle = '#d4a050'; ctx.beginPath(); ctx.arc(x + 30 + i * 12, y - 36, 2, 0, 7); ctx.fill(); }
+      break;
+  }
+  ctx.restore();
+}
+
+function drawCar() {
+  const cx = (SHAFT_LEFT + SHAFT_RIGHT) / 2;
+  const cy = CENTER_Y;
+  const w = CFG.carWidth, h = CFG.carHeight;
+  const left = cx - w / 2, top = cy - h / 2;
+
+  ctx.strokeStyle = '#4a3a2a'; ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(cx, 0); ctx.lineTo(cx, top);
+  ctx.moveTo(cx, top + h); ctx.lineTo(cx, H); ctx.stroke();
+
+  ctx.fillStyle = game.elev.jamFlash > 0 ? '#7a3a2a' : '#5a4530';
+  ctx.fillRect(left, top, w, h);
+  ctx.fillStyle = '#3a2a1c';
+  ctx.fillRect(left + 4, top + 4, w - 8, h - 8);
+  ctx.fillStyle = '#ffdd99';
+  ctx.fillRect(cx - 18, top + 6, 36, 4);
+  const grad = ctx.createLinearGradient(0, top, 0, top + h);
+  grad.addColorStop(0, 'rgba(255,220,150,0.10)');
+  grad.addColorStop(1, 'rgba(255,220,150,0)');
+  ctx.fillStyle = grad; ctx.fillRect(left + 4, top + 4, w - 8, h - 8);
+
+  const m = game.m;
+
+  // riders stand inside the cutaway cabin (drawn first; the doors frost over
+  // them when shut, which is exactly what makes their floor-tags hard to read)
+  const riders = game.passengers.filter(p => p.state === 'riding');
+  const slots = Math.max(riders.length, m.capacity);   // even spacing for the whole cabin
+  const stepX = (w - 52) / Math.max(1, slots);
+  riders.forEach((p, i) => drawPassenger(p, left + 26 + (i + 0.5) * stepX, top + h - 10, 'riding'));
+
+  // CABIN FULL flag — so it's obvious why the lobby keeps piling up
+  if (riders.length >= m.capacity) {
+    const waiting = game.passengers.some(s => s.state === 'waiting');
+    if (waiting && nearestFloorIdx(game.elev.y) === 0) {
+      ctx.fillStyle = `rgba(170,58,50,${0.55 + 0.25 * Math.sin(game.t * 6)})`;
+      ctx.font = 'bold 13px ui-monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('CABIN FULL', cx, top - 12);
+    }
+  }
+
+  // sliding doors — translucent "frosted glass" so the interior is always
+  // visible (dimmed when shut), but the bright readout still punches through
+  const d = game.elev.doors;
+  const panelW = (w - 8) / 2;
+  const opened = panelW * d;
+  ctx.save();
+  ctx.globalAlpha = 0.74;
+  ctx.fillStyle = '#6a5436';
+  ctx.fillRect(left + 4, top + 14, panelW - opened, h - 22);
+  ctx.fillRect(left + 4 + panelW + opened, top + 14, panelW - opened, h - 22);
+  ctx.restore();
+  ctx.strokeStyle = '#bfa45f'; ctx.lineWidth = 1;
+  ctx.strokeRect(left + 4.5, top + 14.5, panelW - opened - 1, h - 23);
+  ctx.strokeRect(left + 4.5 + panelW + opened, top + 14.5, panelW - opened - 1, h - 23);
+
+  // floor-counter readout (an upgrade) — an LED that reads through the glass
+  if (m.floorCounter > 0) {
+    const show = m.floorCounter >= 2 || Math.abs(game.elev.v) < 60;
+    ctx.fillStyle = '#0d0a08';
+    ctx.fillRect(cx - 22, top + 11, 44, 22);
+    ctx.strokeStyle = '#6a5a3a'; ctx.lineWidth = 1; ctx.strokeRect(cx - 22, top + 11, 44, 22);
+    ctx.font = 'bold 16px ui-monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if (show) {
+      ctx.fillStyle = '#ff8030';
+      ctx.fillText(game.floors[nearestFloorIdx(game.elev.y)].label, cx, top + 22);
+    } else {
+      ctx.fillStyle = '#3a2a1c'; ctx.fillText('--', cx, top + 22);
+    }
+  }
+
+  const ok = isAligned() && isStopped();
+  ctx.fillStyle = ok ? '#7aaa55' : '#aa3a32';
+  ctx.beginPath(); ctx.arc(left + w - 12, top + 12, 4, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#bfa45f'; ctx.lineWidth = 2;
+  ctx.strokeRect(left + 0.5, top + 0.5, w - 1, h - 1);
+}
+
+function drawPassenger(p, x, footY, mode) {
+  // panic jitter as patience runs out — you feel the urgency before the bar dies
+  const pfrac = p.patience / p.patienceMax;
+  if (pfrac < 0.28) x += (Math.random() - 0.5) * (0.28 - pfrac) * 26;
+  const bob = Math.sin(p.bob) * 1.5;
+  const fy = footY + bob;
+  const skin = ['#d4a878', '#a87850', '#7a5838', '#5a3820'][p.skin];
+  const coat = p.vip ? '#caa33a' : ['#3a5a78', '#5a3a4a', '#3a4a3a', '#5a4530', '#604070'][p.coat];
+
+  ctx.fillStyle = '#1a1410';
+  ctx.fillRect(x - 6, fy - 12, 5, 12);
+  ctx.fillRect(x + 1, fy - 12, 5, 12);
+  ctx.fillStyle = coat;
+  ctx.fillRect(x - 9, fy - 30, 18, 20);
+  ctx.fillStyle = skin;
+  ctx.beginPath(); ctx.arc(x, fy - 37, 7, 0, 7); ctx.fill();
+  if (p.vip) {
+    // little gold crown so you know who's worth chasing
+    ctx.fillStyle = '#ffd44a';
+    ctx.beginPath();
+    ctx.moveTo(x - 7, fy - 44); ctx.lineTo(x - 7, fy - 50); ctx.lineTo(x - 3, fy - 46);
+    ctx.lineTo(x, fy - 51); ctx.lineTo(x + 3, fy - 46); ctx.lineTo(x + 7, fy - 50);
+    ctx.lineTo(x + 7, fy - 44); ctx.closePath(); ctx.fill();
+  } else if (p.hat >= 0) {
+    ctx.fillStyle = ['#1a1410', '#882018', '#bfa45f'][p.hat];
+    ctx.fillRect(x - 8, fy - 44, 16, 3);
+    ctx.fillRect(x - 5, fy - 49, 10, 6);
+  }
+
+  // floor tag
+  const m = game.m;
+  const destLabel = (game.floors[p.dest] || { label: '?' }).label;
+  let txt;
+  if (mode === 'waiting') { txt = destLabel; }
+  else { // riding — fades to "?" from memory unless the Dispatch Board (or X-Ray) helps
+    const remembered = m.dispatch || game.power.xray > 0 || p.reveal > 0;
+    txt = remembered ? destLabel : '?';
+  }
+  const fading = mode === 'riding' && !m.dispatch && game.power.xray <= 0 && p.reveal > 0 && p.reveal < 1;
+  ctx.globalAlpha = fading ? Math.max(0.35, p.reveal) : 1;
+  ctx.fillStyle = '#1a1410';
+  ctx.fillRect(x - 13, fy - 64, 26, 14);
+  ctx.strokeStyle = txt === '?' ? '#6a5030' : '#bfa45f';
+  ctx.lineWidth = 1; ctx.strokeRect(x - 12.5, fy - 63.5, 25, 13);
+  ctx.fillStyle = txt === '?' ? '#6a5030' : '#bfa45f';
+  ctx.font = 'bold 11px ui-monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(txt, x, fy - 57);
+  ctx.globalAlpha = 1;
+
+  // patience bar
+  const pct = Math.max(0, p.patience / p.patienceMax);
+  if (mode === 'waiting' || mode === 'riding') {
+    ctx.fillStyle = '#2a201a';
+    ctx.fillRect(x - 13, fy - 71, 26, 4);
+    ctx.fillStyle = pct > 0.5 ? '#7aaa55' : pct > 0.25 ? '#d4a050' : '#aa3a32';
+    ctx.fillRect(x - 13, fy - 71, 26 * pct, 4);
+  }
+}
+
+function drawHUD() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(13,10,8,0.85)';
+  ctx.fillRect(0, 0, W, 36);
+  ctx.font = 'bold 14px ui-monospace'; ctx.textBaseline = 'middle';
+
+  ctx.textAlign = 'left'; ctx.fillStyle = '#bfa45f';
+  ctx.fillText(`SHIFT ${run.shiftNum}`, 16, 18);
+  ctx.fillText(`◆ ${run.parts}`, 110, 18);
+  if (run.fuses > 0) { ctx.fillStyle = '#d4a050'; ctx.fillText(`FUSE ${run.fuses}`, 180, 18); }
+
+  // quota progress
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#bfa45f';
+  ctx.fillText(`DELIVERED ${game.delivered} / ${game.quota}`, W / 2, 18);
+
+  ctx.textAlign = 'right';
+  const remaining = maxStrikes() - game.strikes;
+  const dots = '●'.repeat(Math.max(0, remaining)) + '○'.repeat(game.strikes);
+  ctx.fillStyle = remaining <= 1 ? '#aa3a32' : '#bfa45f';
+  ctx.fillText(dots, W - 16, 18);
+
+  // crank gauge
+  ctx.fillStyle = 'rgba(13,10,8,0.85)'; ctx.fillRect(0, H - 30, 224, 30);
+  ctx.fillStyle = '#bfa45f'; ctx.font = 'bold 12px ui-monospace'; ctx.textAlign = 'left';
+  ctx.fillText('CRANK', 14, H - 15);
+  ctx.strokeStyle = '#bfa45f'; ctx.lineWidth = 1; ctx.strokeRect(74, H - 23, 134, 16);
+  const v = game.elev.v / game.m.maxSpeed, half = 66;
+  ctx.fillStyle = v >= 0 ? '#7aaa55' : '#d4a050';
+  if (v >= 0) ctx.fillRect(75 + half, H - 21, half * v, 12);
+  else        ctx.fillRect(75 + half + half * v, H - 21, -half * v, 12);
+  ctx.strokeStyle = '#7a6a4a'; ctx.beginPath();
+  ctx.moveTo(75 + half, H - 23); ctx.lineTo(75 + half, H - 7); ctx.stroke();
+
+  // door status
+  ctx.fillStyle = 'rgba(13,10,8,0.85)'; ctx.fillRect(W - 224, H - 30, 224, 30);
+  ctx.textAlign = 'right';
+  let t, c = '#bfa45f';
+  if (game.elev.jamFlash > 0) { t = 'JAMMED'; c = '#aa3a32'; }
+  else if (doorsOpen()) t = 'DOORS OPEN';
+  else if (game.elev.doors > 0) t = 'MOVING…';
+  else t = 'DOORS SHUT';
+  const full = ridersAboard() >= game.m.capacity;
+  ctx.fillStyle = c; ctx.fillText(t, W - 14, H - 15);
+  ctx.fillStyle = full ? '#aa3a32' : '#7a6a4a';
+  ctx.textAlign = 'left'; ctx.fillText(`${ridersAboard()}/${game.m.capacity}`, W - 218, H - 15);
+
+  // active power-up chips, just under the top bar
+  const active = Object.keys(game.power).filter(k => game.power[k] > 0);
+  let chipX = W / 2 - (active.length * 116) / 2;
+  for (const k of active) {
+    const pw = POWERS[k];
+    const frac = game.power[k] / pw.dur;
+    ctx.fillStyle = 'rgba(13,10,8,0.9)'; ctx.fillRect(chipX, 42, 108, 22);
+    ctx.fillStyle = pw.color; ctx.globalAlpha = 0.25;
+    ctx.fillRect(chipX, 42, 108 * frac, 22); ctx.globalAlpha = 1;
+    ctx.strokeStyle = pw.color; ctx.lineWidth = 1; ctx.strokeRect(chipX + 0.5, 42.5, 107, 21);
+    ctx.fillStyle = pw.color; ctx.font = 'bold 10px ui-monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(pw.name, chipX + 54, 53);
+    chipX += 116;
+  }
+  ctx.restore();
+}
+
+function drawBanner() {
+  const a = Math.min(1, game.banner.t);
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.fillStyle = game.banner.color;
+  ctx.font = 'bold 20px ui-monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(game.banner.text, W / 2, 70);
+  ctx.restore();
+}
+
+// ── title ──
+function drawTitle() {
+  ctx.fillStyle = '#bfa45f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = 'bold 44px ui-monospace, Menlo, monospace';
+  ctx.fillText('THE WORST ELEVATOR', W / 2, 150);
+  ctx.font = '14px ui-monospace'; ctx.fillStyle = '#7a6a4a';
+  ctx.fillText('in the tallest building in town', W / 2, 184);
+
+  ctx.fillStyle = '#bfa45f'; ctx.font = '15px ui-monospace';
+  const lines = [
+    '↑ / ↓     crank the car up and down',
+    'SPACE     open / close the doors',
+    '',
+    'Scoop riders from the LOBBY. They shout a floor —',
+    'remember it, because once aboard it fades to "?".',
+    'Doors open only when STOPPED and ALIGNED.',
+    'Hit your quota to survive; three walk-offs and you\'re fired.',
+    '',
+    'Survive a shift, earn ◆ parts, and rebuild the lift',
+    'into something that does the hard part for you.',
+  ];
+  let y = 260;
+  for (const l of lines) { ctx.fillText(l, W / 2, y); y += 26; }
+
+  if (save.best.shifts > 0 || save.best.delivered > 0) {
+    ctx.fillStyle = '#7a6a4a'; ctx.font = '13px ui-monospace';
+    ctx.fillText(`best run:  ${save.best.shifts} shifts survived  ·  ${save.best.delivered} deliveries`, W / 2, H - 168);
+  }
+
+  drawButton('CLOCK IN  ▸', W / 2 - 238, H - 128, 250, 46,
+             () => { run = newRun(); startShift(); }, true);
+  drawButton(`WORKSHOP  ★ ${save.stars}`, W / 2 + 28, H - 128, 210, 46,
+             () => { menu = 'WORKSHOP'; }, false);
+  ctx.fillStyle = '#7a6a4a'; ctx.font = '11px ui-monospace'; ctx.textAlign = 'center';
+  ctx.fillText('SPACE: clock in       M: workshop (spend ★ on permanent perks)', W / 2, H - 64);
+}
+
+function drawButton(label, x, y, w, h, fn, primary) {
+  const blink = primary ? (Math.floor(performance.now() / 450) % 2 === 0) : true;
+  ctx.fillStyle = primary ? (blink ? '#3a2e1a' : '#2a2014') : '#241a13';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = '#bfa45f'; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
+  ctx.fillStyle = '#d4a050'; ctx.font = 'bold 16px ui-monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(label, x + w / 2, y + h / 2);
+  buttons.push({ x, y, w, h, fn });
+}
+
+// ── the Spider Floor scene ──
+function drawSpider() {
+  const sg = game.spiderGame;
+  // backdrop
+  ctx.fillStyle = '#0a0510'; ctx.fillRect(0, 0, W, H);
+  const danger = sg.descent;
+  // creeping red as it nears
+  ctx.fillStyle = `rgba(60,8,40,${0.25 + danger * 0.4})`;
+  ctx.fillRect(0, 0, W, H);
+
+  // faint background web
+  ctx.strokeStyle = 'rgba(150,130,170,0.10)'; ctx.lineWidth = 1;
+  const cxw = W / 2;
+  for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
+    ctx.beginPath(); ctx.moveTo(cxw, 0); ctx.lineTo(cxw + Math.cos(a) * 700, Math.sin(a) * 700); ctx.stroke();
+  }
+  for (let r = 80; r < 700; r += 80) {
+    ctx.beginPath();
+    for (let a = 0; a <= Math.PI * 2 + 0.1; a += Math.PI / 8) {
+      const px = cxw + Math.cos(a) * r, py = 0 + Math.sin(a) * r;
+      a === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = '#c89aff'; ctx.font = 'bold 26px ui-monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('THE SPIDER FLOOR', W / 2, 50);
+
+  // hanging cocoons (decor that reads as "loot in the web")
+  ctx.save();
+  for (let i = 0; i < 5; i++) {
+    const lx = 150 + i * 130 + Math.sin(sg.sway + i) * 6;
+    const ly = 120 + (i % 2) * 40;
+    ctx.strokeStyle = 'rgba(200,180,210,0.25)';
+    ctx.beginPath(); ctx.moveTo(lx, 80); ctx.lineTo(lx, ly); ctx.stroke();
+    ctx.fillStyle = '#d8cce0';
+    ctx.beginPath(); ctx.ellipse(lx, ly + 10, 9, 15, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#ffd44a';
+    ctx.font = 'bold 10px ui-monospace'; ctx.fillText('◆', lx, ly + 10);
+  }
+  ctx.restore();
+
+  // pile grabbed — top, clear of the spider's path
+  ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 22px ui-monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(`◆ ${Math.floor(sg.pile)} grabbed`, W / 2, 82);
+
+  // vertical danger gauge down the right margin — mirrors the spider's drop
+  const gX = W - 34, gTop = 120, gH = H - 230;
+  ctx.fillStyle = '#1a0a14'; ctx.fillRect(gX - 7, gTop, 14, gH);
+  ctx.fillStyle = danger > 0.75 ? '#ff3a4a' : danger > 0.5 ? '#d4a050' : '#7aaa55';
+  ctx.fillRect(gX - 7, gTop, 14, gH * Math.min(1, danger));
+  ctx.strokeStyle = '#6a4a6a'; ctx.lineWidth = 1; ctx.strokeRect(gX - 7.5, gTop - 0.5, 14, gH + 1);
+  ctx.fillStyle = '#9a7aaa'; ctx.font = '9px ui-monospace';
+  ctx.fillText('FAR', gX, gTop - 14); ctx.fillText('CLOSE!', gX, gTop + gH + 12);
+
+  // the lift doorway you must reach — bottom center, the spider's target
+  const youY = H - 116;
+  ctx.fillStyle = '#1a1018';
+  ctx.fillRect(W / 2 - 44, youY, 88, 76);
+  ctx.strokeStyle = '#6a4a6a'; ctx.lineWidth = 2; ctx.strokeRect(W / 2 - 44, youY, 88, 76);
+  ctx.fillStyle = '#3a5a78'; ctx.fillRect(W / 2 - 8, youY + 40, 16, 22);
+  ctx.fillStyle = '#d4a878'; ctx.beginPath(); ctx.arc(W / 2, youY + 34, 7, 0, 7); ctx.fill();
+  ctx.fillStyle = '#7aff9a'; ctx.font = '10px ui-monospace'; ctx.fillText('THE LIFT', W / 2, youY - 10);
+
+  // the descending spider — its path runs from the top down toward the lift
+  const threadTop = 70;
+  const spY = 150 + sg.descent * (youY - 150);
+  const spX = W / 2 + Math.sin(sg.sway) * 70;
+  ctx.strokeStyle = 'rgba(220,210,230,0.5)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(W / 2, threadTop); ctx.lineTo(spX, spY); ctx.stroke();
+  drawSpiderBody(spX, spY, sg);
+
+  // prompts at the very bottom, below the lift
+  if (!sg.result) {
+    ctx.textAlign = 'center';
+    ctx.fillStyle = keys.has(' ') ? '#ffd44a' : '#c89aff';
+    ctx.font = 'bold 14px ui-monospace';
+    ctx.fillText('HOLD  SPACE  to grab loot', W / 2, H - 30);
+    ctx.fillStyle = sg.pile > 0 ? '#7aff9a' : '#4a6a52';
+    ctx.fillText('press  ↑  to bolt back' + (sg.pile > 0 ? '  —  bank your loot!' : ''), W / 2, H - 12);
+  } else {
+    ctx.fillStyle = 'rgba(8,4,12,0.78)'; ctx.fillRect(0, H / 2 - 60, W, 120);
+    ctx.textAlign = 'center';
+    if (sg.result === 'banked') {
+      ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 44px ui-monospace';
+      ctx.fillText(`BANKED ◆ ${Math.floor(sg.pile)}`, W / 2, H / 2);
+    } else {
+      ctx.fillStyle = '#ff3a4a'; ctx.font = 'bold 48px ui-monospace';
+      ctx.fillText('CAUGHT!', W / 2, H / 2);
+    }
+  }
+}
+
+function drawSpiderBody(x, y, sg) {
+  const wig = Math.sin(sg.sway * 2) * 5;
+  const wig2 = Math.cos(sg.sway * 2) * 5;
+  // eight jointed legs
+  ctx.strokeStyle = '#120810'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+  for (let i = -1; i <= 1; i += 2) {
+    for (let l = 0; l < 4; l++) {
+      const spread = 22 + l * 6;
+      const rise = -14 + l * 12;
+      const knee = { x: x + i * spread, y: y + rise + (l % 2 ? wig : wig2) };
+      const foot = { x: knee.x + i * 16, y: knee.y + 22 + (l % 2 ? wig2 : wig) };
+      ctx.beginPath();
+      ctx.moveTo(x, y); ctx.lineTo(knee.x, knee.y); ctx.lineTo(foot.x, foot.y);
+      ctx.stroke();
+    }
+  }
+  // abdomen + head
+  ctx.fillStyle = '#160a12';
+  ctx.beginPath(); ctx.ellipse(x, y + 4, 20, 24, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#1c0e18';
+  ctx.beginPath(); ctx.arc(x, y - 16, 13, 0, 7); ctx.fill();
+  // a faint hourglass marking
+  ctx.fillStyle = '#5a1030';
+  ctx.beginPath(); ctx.moveTo(x - 5, y - 2); ctx.lineTo(x + 5, y - 2);
+  ctx.lineTo(x - 5, y + 14); ctx.lineTo(x + 5, y + 14); ctx.closePath(); ctx.fill();
+  // glowing eyes
+  ctx.fillStyle = '#ff2a4a';
+  for (const [dx, dy] of [[-6, -18], [6, -18], [-3, -13], [3, -13]]) {
+    ctx.beginPath(); ctx.arc(x + dx, y + dy, 2.4, 0, 7); ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(255,60,90,0.25)';
+  ctx.beginPath(); ctx.arc(x, y - 15, 16, 0, 7); ctx.fill();
+}
+
+// ── shift done overlay ──
+function drawShiftDone() {
+  ctx.fillStyle = 'rgba(13,10,8,0.86)'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#7aaa55'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = 'bold 40px ui-monospace';
+  ctx.fillText(`SHIFT ${run.shiftNum} SURVIVED`, W / 2, H / 2 - 90);
+  ctx.fillStyle = '#bfa45f'; ctx.font = '18px ui-monospace';
+  ctx.fillText(`${game.delivered} delivered  ·  +${game.partsThisShift} ◆ from fares`, W / 2, H / 2 - 36);
+  ctx.fillText(`shift bonus  +${game.bonus} ◆`, W / 2, H / 2 - 8);
+  ctx.fillStyle = '#d4a050'; ctx.font = 'bold 22px ui-monospace';
+  ctx.fillText(`◆ ${run.parts} parts in pocket`, W / 2, H / 2 + 36);
+  drawButton('VISIT THE PARTS SHOP  ▸', W / 2 - 150, H / 2 + 80, 300, 46, openShop, true);
+}
+
+function drawFired() {
+  ctx.fillStyle = 'rgba(13,10,8,0.9)'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#aa3a32'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = 'bold 50px ui-monospace';
+  ctx.fillText("YOU'RE FIRED", W / 2, H / 2 - 70);
+  ctx.fillStyle = '#bfa45f'; ctx.font = '18px ui-monospace';
+  const survived = run.shiftNum - 1;
+  ctx.fillText(`survived ${survived} shift${survived === 1 ? '' : 's'}  ·  ${run.totalDelivered} total deliveries`, W / 2, H / 2 - 24);
+  ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 22px ui-monospace';
+  ctx.fillText(`★ +${game.starsEarned ?? 0} stars earned   (★ ${save.stars} banked)`, W / 2, H / 2 + 12);
+  ctx.fillStyle = '#7a6a4a'; ctx.font = '14px ui-monospace';
+  ctx.fillText(`best: ${save.best.shifts} shifts  ·  ${save.best.delivered} deliveries`, W / 2, H / 2 + 44);
+  drawButton('SPEND ★ IN WORKSHOP', W / 2 - 240, H / 2 + 80, 226, 46, () => { menu = 'WORKSHOP'; }, false);
+  drawButton('CLOCK IN AGAIN', W / 2 + 14, H / 2 + 80, 226, 46, () => { menu = null; game.state = 'TITLE'; }, true);
+}
+
+// ── the Workshop: permanent cross-run perks bought with ★ stars ──
+function drawWorkshop() {
+  ctx.fillStyle = '#0b0a0d'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#b9c4e0'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = 'bold 34px ui-monospace';
+  ctx.fillText('THE WORKSHOP', W / 2, 54);
+  ctx.font = '14px ui-monospace'; ctx.fillStyle = '#6a6a82';
+  ctx.fillText('permanent perks you keep between jobs — earned by surviving', W / 2, 82);
+  ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 20px ui-monospace';
+  ctx.fillText(`★ ${save.stars} stars`, W / 2, 114);
+
+  const cols = 2, cardW = 380, cardH = 84, gapX = 24, gapY = 12;
+  const totalW = cols * cardW + (cols - 1) * gapX;
+  const x0 = (W - totalW) / 2, y0 = 144;
+  META.forEach((m, i) => {
+    const cx = x0 + (i % cols) * (cardW + gapX);
+    const cy = y0 + Math.floor(i / cols) * (cardH + gapY);
+    const lvl = save.meta[m.key];
+    const maxed = lvl >= m.max;
+    const cost = maxed ? null : m.costs[lvl];
+    const afford = !maxed && save.stars >= cost;
+
+    ctx.fillStyle = '#12131a'; ctx.fillRect(cx, cy, cardW, cardH);
+    ctx.strokeStyle = maxed ? '#3a5a4a' : afford ? '#b9c4e0' : '#2a2c38';
+    ctx.lineWidth = 2; ctx.strokeRect(cx, cy, cardW, cardH);
+
+    ctx.fillStyle = afford ? '#ffd44a' : '#4a4a5a';
+    ctx.font = 'bold 15px ui-monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText(`${i + 1}`, cx + 12, cy + 12);
+    ctx.fillStyle = '#b9c4e0'; ctx.font = 'bold 16px ui-monospace';
+    ctx.fillText(m.name, cx + 34, cy + 11);
+
+    for (let l = 0; l < m.max; l++) {
+      ctx.fillStyle = l < lvl ? '#7aaa55' : '#2a2c38';
+      ctx.fillRect(cx + cardW - 16 - (m.max - l) * 16, cy + 12, 12, 8);
+    }
+
+    ctx.fillStyle = '#8a8aa2'; ctx.font = '12px ui-monospace';
+    wrapText(m.blurb[Math.min(lvl, m.blurb.length - 1)], cx + 14, cy + 38, cardW - 28, 15);
+
+    ctx.font = 'bold 14px ui-monospace'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+    if (maxed) { ctx.fillStyle = '#7aaa55'; ctx.fillText('MAXED', cx + cardW - 14, cy + cardH - 12); }
+    else { ctx.fillStyle = afford ? '#ffd44a' : '#6a6a4a'; ctx.fillText(`★ ${cost}`, cx + cardW - 14, cy + cardH - 12); }
+
+    if (!maxed) buttons.push({ x: cx, y: cy, w: cardW, h: cardH, fn: () => buyMeta(m) });
+  });
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#6a6a82'; ctx.font = '12px ui-monospace';
+  ctx.fillText('click an item or press its number  ·  perks apply to your NEXT run', W / 2, H - 92);
+  drawButton('◂  BACK', W / 2 - 110, H - 72, 220, 44, () => { menu = null; }, true);
+}
+
+// ── shop ──
+function drawShop() {
+  ctx.fillStyle = '#0d0a08'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#bfa45f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = 'bold 34px ui-monospace';
+  ctx.fillText('THE PARTS SHOP', W / 2, 56);
+  ctx.font = '14px ui-monospace'; ctx.fillStyle = '#7a6a4a';
+  ctx.fillText('turn the death-trap into a dream machine', W / 2, 84);
+  ctx.fillStyle = '#d4a050'; ctx.font = 'bold 20px ui-monospace';
+  ctx.fillText(`◆ ${run.parts} parts`, W / 2, 116);
+
+  const cols = 2, cardW = 380, cardH = 84, gapX = 24, gapY = 12;
+  const totalW = cols * cardW + (cols - 1) * gapX;
+  const x0 = (W - totalW) / 2, y0 = 144;
+  UPGRADES.forEach((u, i) => {
+    const cx = x0 + (i % cols) * (cardW + gapX);
+    const cy = y0 + Math.floor(i / cols) * (cardH + gapY);
+    const lvl = run.up[u.key];
+    const maxed = lvl >= u.max;
+    const cost = maxed ? null : u.costs[lvl];
+    const afford = !maxed && run.parts >= cost;
+
+    ctx.fillStyle = '#1a130d';
+    ctx.fillRect(cx, cy, cardW, cardH);
+    ctx.strokeStyle = maxed ? '#3a5a2a' : afford ? '#bfa45f' : '#3a2e22';
+    ctx.lineWidth = 2; ctx.strokeRect(cx, cy, cardW, cardH);
+
+    // index key
+    ctx.fillStyle = afford ? '#d4a050' : '#5a4a32';
+    ctx.font = 'bold 15px ui-monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText(`${i + 1}`, cx + 12, cy + 12);
+
+    ctx.fillStyle = '#bfa45f'; ctx.font = 'bold 16px ui-monospace';
+    ctx.fillText(u.name, cx + 34, cy + 11);
+
+    // level pips
+    for (let l = 0; l < u.max; l++) {
+      ctx.fillStyle = l < lvl ? '#7aaa55' : '#3a2e22';
+      ctx.fillRect(cx + cardW - 16 - (u.max - l) * 16, cy + 12, 12, 8);
+    }
+
+    ctx.fillStyle = '#9a8a64'; ctx.font = '12px ui-monospace';
+    const blurb = u.blurb[Math.min(lvl, u.blurb.length - 1)];
+    wrapText(blurb, cx + 14, cy + 38, cardW - 28, 15);
+
+    ctx.font = 'bold 14px ui-monospace'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+    if (maxed) { ctx.fillStyle = '#7aaa55'; ctx.fillText('MAXED', cx + cardW - 14, cy + cardH - 12); }
+    else { ctx.fillStyle = afford ? '#d4a050' : '#7a5a3a'; ctx.fillText(`◆ ${cost}`, cx + cardW - 14, cy + cardH - 12); }
+
+    if (!maxed) buttons.push({ x: cx, y: cy, w: cardW, h: cardH, fn: () => buyUpgrade(u) });
+  });
+
+  // consumable: Spare Fuse — a full-width strip below the upgrade grid
+  const fy = y0 + 4 * (cardH + gapY) + 4;
+  const fAfford = run.parts >= FUSE_COST;
+  ctx.fillStyle = '#170f14'; ctx.fillRect(x0, fy, totalW, 44);
+  ctx.strokeStyle = fAfford ? '#d4a050' : '#3a2e22'; ctx.lineWidth = 2;
+  ctx.strokeRect(x0, fy, totalW, 44);
+  ctx.fillStyle = fAfford ? '#d4a050' : '#5a4a32';
+  ctx.font = 'bold 15px ui-monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('9', x0 + 12, fy + 22);
+  ctx.fillStyle = '#d4a050'; ctx.font = 'bold 16px ui-monospace';
+  ctx.fillText('Spare Fuse', x0 + 34, fy + 16);
+  ctx.fillStyle = '#9a8a64'; ctx.font = '12px ui-monospace';
+  ctx.fillText(`forgives one walk-off — consumable. carrying ${run.fuses}.`, x0 + 34, fy + 32);
+  ctx.font = 'bold 14px ui-monospace'; ctx.textAlign = 'right';
+  ctx.fillStyle = fAfford ? '#d4a050' : '#7a5a3a';
+  ctx.fillText(`◆ ${FUSE_COST}`, x0 + totalW - 14, fy + 22);
+  buttons.push({ x: x0, y: fy, w: totalW, h: 44, fn: buyFuse });
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#7a6a4a'; ctx.font = '12px ui-monospace';
+  ctx.fillText('click an item or press its number to buy', W / 2, H - 96);
+  const nextQ = shiftParams(run.shiftNum + 1).quota;
+  drawButton(`START SHIFT ${run.shiftNum + 1}  (quota ${nextQ})  ▸`,
+             W / 2 - 170, H - 76, 340, 44, () => startShift(), true);
+}
+
+function wrapText(text, x, y, maxW, lh) {
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  const words = text.split(' ');
+  let line = '', yy = y;
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w;
+    if (ctx.measureText(test).width > maxW && line) { ctx.fillText(line, x, yy); line = w; yy += lh; }
+    else line = test;
+  }
+  if (line) ctx.fillText(line, x, yy);
+}
+
+// ════════════════════════════════════════════════════════════ AUDIO
+// Tiny procedural synth — no asset files. Created lazily on first input.
+
+const sfx = (() => {
+  let ac = null, master = null;
+  function ensure() {
+    if (ac) return;
+    try {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      master = ac.createGain(); master.gain.value = 0.32; master.connect(ac.destination);
+    } catch (e) { ac = null; }
+  }
+  function resume() { ensure(); if (ac && ac.state === 'suspended') ac.resume(); }
+  function tone(freq, dur, type = 'square', vol = 0.5, slideTo = null) {
+    if (!ac) return;
+    const t = ac.currentTime;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  return {
+    resume,
+    ding()  { tone(880, 0.12, 'sine', 0.5); tone(1320, 0.16, 'sine', 0.3); },
+    board() { tone(440, 0.07, 'square', 0.35, 560); },
+    chime() { tone(660, 0.09, 'sine', 0.5); tone(990, 0.14, 'sine', 0.4, 1180); },
+    door()  { tone(160, 0.18, 'sawtooth', 0.25, 120); },
+    thud()  { tone(90, 0.14, 'sine', 0.6, 60); },
+    buzz()  { tone(140, 0.22, 'sawtooth', 0.45, 80); },
+    buy()   { tone(523, 0.08, 'square', 0.4); tone(784, 0.12, 'square', 0.4); },
+    power() { [660, 880, 1100, 1320].forEach((f, i) => setTimeout(() => tone(f, 0.1, 'sine', 0.4), i * 55)); },
+    spider(){ tone(120, 0.6, 'sawtooth', 0.3, 88); tone(123.5, 0.6, 'sawtooth', 0.22, 90); },
+    grab()  { tone(280 + Math.random() * 80, 0.05, 'square', 0.22); },
+    caught(){ [600, 480, 360, 250, 170].forEach((f, i) => setTimeout(() => tone(f, 0.18, 'sawtooth', 0.45), i * 70)); },
+    fanfare(){ [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => tone(f, 0.18, 'square', 0.4), i * 90)); },
+    fired() { [330, 294, 262, 196].forEach((f, i) => setTimeout(() => tone(f, 0.3, 'sawtooth', 0.4), i * 160)); },
+  };
+})();
+
+// ════════════════════════════════════════════════════════════ LOOP
+
+let lastT = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - lastT) / 1000);
+  lastT = now;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// fit canvas to viewport while keeping internal resolution
+function fit() {
+  const pad = 24;
+  const sw = (window.innerWidth - pad) / W;
+  const shh = (window.innerHeight - pad) / H;
+  const s = Math.min(sw, shh, 1.4);
+  canvas.style.width = (W * s) + 'px';
+  canvas.style.height = (H * s) + 'px';
+}
+window.addEventListener('resize', fit);
+fit();
