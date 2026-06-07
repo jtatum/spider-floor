@@ -245,6 +245,27 @@ test('a special primes a one-shot effect for the next shift', (G) => {
   assert.equal(G.maxStrikes(), before, 'one-shot effect cleared');
 });
 
+test('each run gets a building colour theme', (G) => {
+  G.run = G.newRun();
+  assert.ok(G.run.theme && G.run.theme.wall && G.run.theme.room, 'theme assigned');
+});
+
+test('a two-condition shift never stacks two bad ones', (G) => {
+  G.run = G.newRun();
+  let sawTwo = false;
+  for (let i = 0; i < 200; i++) {
+    G.run.shiftNum = 5 + (i % 6);
+    G.startShift();
+    const mods = G.game.modifiers;
+    if (mods.length === 2) {
+      sawTwo = true;
+      const bad = mods.filter(m => m.tone === 'bad').length;
+      assert.ok(bad < 2, `two bad conditions stacked: ${mods.map(m => m.name)}`);
+    }
+  }
+  assert.ok(sawTwo, 'exercised the two-condition path at least once');
+});
+
 test('a Spare Blueprint installs a random upgrade level', (G) => {
   G.run = G.newRun(); G.startShift();
   G.run.parts = 50; G.openShop();

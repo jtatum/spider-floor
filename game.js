@@ -53,6 +53,16 @@ function shuffle(a) {
   }
   return a;
 }
+
+// Each career gets a building palette, so runs look distinct at a glance.
+// Landmarks keep their own bright colours and pop against whichever theme.
+const THEMES = [
+  { name: 'sepia', wall: '#2a1f17', wallDark: '#241a13', shaft: '#070504', col: '#1a1410', room: '#1d160f', slab: '#3a2a1c', ceil: '#0f0b07' },
+  { name: 'slate', wall: '#1c2230', wallDark: '#161b27', shaft: '#05070a', col: '#10141c', room: '#141a24', slab: '#2a3344', ceil: '#0a0d12' },
+  { name: 'moss',  wall: '#1e2a1c', wallDark: '#182316', shaft: '#060805', col: '#121a10', room: '#16200f', slab: '#2c3a22', ceil: '#0a0f07' },
+  { name: 'rust',  wall: '#301c18', wallDark: '#271613', shaft: '#0a0504', col: '#1c100c', room: '#241310', slab: '#3a221c', ceil: '#0f0705' },
+  { name: 'plum',  wall: '#261a2a', wallDark: '#1f1522', shaft: '#080510', col: '#160f1c', room: '#1b1322', slab: '#322444', ceil: '#0c0712' },
+];
 // acc (landmark) per floor index; floor 0 is always the lobby
 function generateBuilding() {
   const picks = shuffle(LANDMARKS);
@@ -140,7 +150,14 @@ function rollModifiers(n) {
   const count = n >= 5 && Math.random() < 0.5 ? 2 : 1;
   const avoid = run.seenModifiers.slice(-3);
   const pool = MODIFIERS.filter(m => !avoid.includes(m.key));
-  const picks = shuffle(pool).slice(0, count);
+  const first = pool[Math.floor(Math.random() * pool.length)];
+  const picks = [first];
+  if (count === 2) {
+    // never pile two "bad" conditions on at once — keep a two-condition shift fair
+    let pool2 = pool.filter(m => m.key !== first.key);
+    if (first.tone === 'bad') pool2 = pool2.filter(m => m.tone !== 'bad');
+    if (pool2.length) picks.push(pool2[Math.floor(Math.random() * pool2.length)]);
+  }
   run.seenModifiers.push(...picks.map(m => m.key));
   return picks;
 }
@@ -209,6 +226,7 @@ function newRun() {
     totalDelivered: 0,
     fuses: 0,          // consumable: each forgives one walk-off
     building: generateBuilding(),   // this career's landmark layout
+    theme: THEMES[Math.floor(Math.random() * THEMES.length)],
     seenModifiers: [],              // for variety: avoid repeating conditions back-to-back
     nextShift: {},                  // one-shot effects primed by shop "specials"
   };
@@ -290,6 +308,7 @@ function startShift() {
   if (ns.extraStrike) game.extraStrike = ns.extraStrike;
   if (ns.startPower) grantPower();
   run.nextShift = {};
+  sfx.intro();
 }
 
 function capacityNow() { return Math.max(1, game.m.capacity + game.fx.capDelta); }
@@ -657,7 +676,7 @@ function update(dt) {
         flash(col, 0.18);
         burst(e, col);                                  // particle pop at the cabin
         floatText(`+${fare} ◆`, col);
-        sfx.chime();
+        if (p.kind === 'tipper') sfx.tip(); else sfx.chime();
         if (p.vip) grantPower();   // VIPs tip a temporary boon
       } else if (p.patience <= 0) {
         losePassenger(p);
@@ -949,19 +968,20 @@ function drawIntro() {
 }
 
 function drawBuilding() {
-  ctx.fillStyle = '#2a1f17';
+  const th = run.theme;
+  ctx.fillStyle = th.wall;
   ctx.fillRect(0, 0, SHAFT_LEFT, H);
   ctx.fillRect(ROOM_RIGHT, 0, W - ROOM_RIGHT, H);
-  ctx.fillStyle = '#241a13';
+  ctx.fillStyle = th.wallDark;
   for (let y = 0; y < H; y += 30) {
     const off = (Math.floor(y / 30) % 2) * 30;
     for (let x = 0; x < SHAFT_LEFT; x += 60) ctx.fillRect(x + off, y, 28, 28);
     for (let x = ROOM_RIGHT; x < W; x += 60) ctx.fillRect(x + off, y, 28, 28);
   }
   // shaft
-  ctx.fillStyle = '#070504';
+  ctx.fillStyle = th.shaft;
   ctx.fillRect(SHAFT_LEFT, 0, SHAFT_RIGHT - SHAFT_LEFT, H);
-  ctx.strokeStyle = '#1a1410';
+  ctx.strokeStyle = th.col;
   ctx.lineWidth = 2;
   for (const x of [SHAFT_LEFT + 14, SHAFT_RIGHT - 14]) {
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
@@ -1043,18 +1063,19 @@ function drawFloor(f, sy) {
   const bot = sy + CFG.floorHeight / 2;
   if (bot < -40 || top > H + 40) return;
 
-  ctx.fillStyle = '#1d160f';
+  const th = run.theme;
+  ctx.fillStyle = th.room;
   ctx.fillRect(ROOM_LEFT, top, ROOM_RIGHT - ROOM_LEFT, CFG.floorHeight);
-  ctx.fillStyle = '#3a2a1c';
+  ctx.fillStyle = th.slab;
   ctx.fillRect(ROOM_LEFT, bot - 8, ROOM_RIGHT - ROOM_LEFT, 8);
-  ctx.fillStyle = '#0f0b07';
+  ctx.fillStyle = th.ceil;
   ctx.fillRect(ROOM_LEFT, top, ROOM_RIGHT - ROOM_LEFT, 6);
 
   // no painted floor number — you navigate by the landmark alone (the building
   // has no display). The Floor Counter upgrade is the only way to read a number.
   drawLandmark(f, (ROOM_LEFT + ROOM_RIGHT) / 2 + 40, sy);
 
-  ctx.strokeStyle = '#3a2a1c';
+  ctx.strokeStyle = th.slab;
   ctx.lineWidth = 2;
   ctx.strokeRect(ROOM_LEFT + 4, top + 8, 60, CFG.floorHeight - 16);
 
@@ -1872,6 +1893,8 @@ const sfx = (() => {
     caught(){ [600, 480, 360, 250, 170].forEach((f, i) => setTimeout(() => tone(f, 0.18, 'sawtooth', 0.45), i * 70)); },
     fanfare(){ [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => tone(f, 0.18, 'square', 0.4), i * 90)); },
     fired() { [330, 294, 262, 196].forEach((f, i) => setTimeout(() => tone(f, 0.3, 'sawtooth', 0.4), i * 160)); },
+    intro() { tone(392, 0.16, 'sine', 0.3); setTimeout(() => tone(587, 0.2, 'sine', 0.3), 130); },
+    tip()   { tone(784, 0.07, 'sine', 0.5); tone(1175, 0.12, 'sine', 0.4, 1320); },
   };
 })();
 
