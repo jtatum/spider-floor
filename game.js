@@ -192,7 +192,7 @@ function loadSave() {
 function persist() { try { localStorage.setItem('worstElevatorSave', JSON.stringify(save)); } catch (e) {} }
 let save = loadSave();
 
-function maxStrikes() { return CFG.strikesAllowed + save.meta.unionCard; }
+function maxStrikes() { return CFG.strikesAllowed + save.meta.unionCard + ((game && game.extraStrike) || 0); }
 
 function newRun() {
   const meta = save.meta;
@@ -210,6 +210,7 @@ function newRun() {
     fuses: 0,          // consumable: each forgives one walk-off
     building: generateBuilding(),   // this career's landmark layout
     seenModifiers: [],              // for variety: avoid repeating conditions back-to-back
+    nextShift: {},                  // one-shot effects primed by shop "specials"
   };
 }
 
@@ -280,6 +281,15 @@ function startShift() {
     spiderGame: null,
     m,
   };
+
+  // consume one-shot "special" effects primed in the shop last visit
+  const ns = run.nextShift || {};
+  if (ns.patienceBoost) game.patMul *= ns.patienceBoost;
+  if (ns.brakeBoost) game.brakeBoost = ns.brakeBoost;
+  if (ns.guaranteedSpider) { game.fx.forceSpider = true; game.spider.cooldown = 3; }
+  if (ns.extraStrike) game.extraStrike = ns.extraStrike;
+  if (ns.startPower) grantPower();
+  run.nextShift = {};
 }
 
 function capacityNow() { return Math.max(1, game.m.capacity + game.fx.capDelta); }
@@ -367,7 +377,9 @@ function handleKey(k) {
       const i = parseInt(k, 10) - 1;
       if (i < UPGRADES.length) buyUpgrade(UPGRADES[i]);
     }
-    if (k === '9' || k === '0') buyFuse();
+    if (k === '9') buyFuse();
+    if (k === '0') buySpecial(shop.offers[0]);
+    if (k === '-') buySpecial(shop.offers[1]);
     return;
   }
   if (st === 'PLAYING') {
@@ -553,7 +565,8 @@ function update(dt) {
   if (input !== 0) {
     // cranking with the grain accelerates; against it, the reverse-crank brakes
     const braking = Math.sign(input) !== Math.sign(e.v) && Math.abs(e.v) > 1;
-    e.v += input * (braking ? m.brakeAccel : accelE) * dt;
+    const brakeA = m.brakeAccel * (game.brakeBoost || 1);
+    e.v += input * (braking ? brakeA : accelE) * dt;
   } else {
     // no input: a heavy flywheel. Barely any drag, so momentum carries you —
     // letting go does NOT stop you. "SLIPPERY CABLES" makes it glide even more.
@@ -745,9 +758,41 @@ function exitSpider() {
 
 // ──────────────────────────────────────────────────────────────── shop
 
+// Rotating "specials" — a couple are offered each shop visit (shuffled), so the
+// one-shot options you get differ run to run. Most prime the NEXT shift.
+const SPECIALS = [
+  { key: 'blueprint', name: 'Spare Blueprint', cost: 7,
+    blurb: 'Install +1 level on a random fitting right now.',
+    apply() { const o = UPGRADES.filter(u => run.up[u.key] < u.max);
+              if (o.length) run.up[o[Math.floor(Math.random() * o.length)].key]++; } },
+  { key: 'espresso',  name: 'Crate of Espresso', cost: 4,
+    blurb: 'Next shift, the whole crowd starts more patient.',
+    apply() { run.nextShift.patienceBoost = 1.4; } },
+  { key: 'tipoff',    name: 'Spider Tip-Off', cost: 5,
+    blurb: 'Next shift, the Spider Floor opens early for sure.',
+    apply() { run.nextShift.guaranteedSpider = true; } },
+  { key: 'charm',     name: 'Lucky Charm', cost: 5,
+    blurb: 'Begin next shift with a random power-up running.',
+    apply() { run.nextShift.startPower = true; } },
+  { key: 'overtime',  name: 'Overtime Waiver', cost: 6,
+    blurb: 'One extra strike — for the next shift only.',
+    apply() { run.nextShift.extraStrike = 1; } },
+  { key: 'grease',    name: 'Cable Grease', cost: 5,
+    blurb: 'Next shift, a rebuilt brake — far easier stops.',
+    apply() { run.nextShift.brakeBoost = 1.7; } },
+];
+
 function openShop() {
-  shop = {};
+  shop = { offers: shuffle(SPECIALS).slice(0, 2), bought: {} };
   game.state = 'SHOP';
+}
+function buySpecial(s) {
+  if (!s || (shop.bought && shop.bought[s.key])) { sfx.buzz(); return; }
+  if (run.parts < s.cost) { sfx.buzz(); return; }
+  run.parts -= s.cost;
+  s.apply();
+  shop.bought[s.key] = true;
+  sfx.buy();
 }
 function buyUpgrade(u) {
   const lvl = run.up[u.key];
@@ -1699,23 +1744,31 @@ function drawShop() {
     if (!maxed) buttons.push({ x: cx, y: cy, w: cardW, h: cardH, fn: () => buyUpgrade(u) });
   });
 
-  // consumable: Spare Fuse — a full-width strip below the upgrade grid
-  const fy = y0 + 4 * (cardH + gapY) + 4;
-  const fAfford = run.parts >= FUSE_COST;
-  ctx.fillStyle = '#170f14'; ctx.fillRect(x0, fy, totalW, 44);
-  ctx.strokeStyle = fAfford ? '#d4a050' : '#3a2e22'; ctx.lineWidth = 2;
-  ctx.strokeRect(x0, fy, totalW, 44);
-  ctx.fillStyle = fAfford ? '#d4a050' : '#5a4a32';
-  ctx.font = 'bold 15px ui-monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText('9', x0 + 12, fy + 22);
-  ctx.fillStyle = '#d4a050'; ctx.font = 'bold 16px ui-monospace';
-  ctx.fillText('Spare Fuse', x0 + 34, fy + 16);
-  ctx.fillStyle = '#9a8a64'; ctx.font = '12px ui-monospace';
-  ctx.fillText(`forgives one walk-off — consumable. carrying ${run.fuses}.`, x0 + 34, fy + 32);
-  ctx.font = 'bold 14px ui-monospace'; ctx.textAlign = 'right';
-  ctx.fillStyle = fAfford ? '#d4a050' : '#7a5a3a';
-  ctx.fillText(`◆ ${FUSE_COST}`, x0 + totalW - 14, fy + 22);
-  buttons.push({ x: x0, y: fy, w: totalW, h: 44, fn: buyFuse });
+  // the rotating shelf: Spare Fuse + two "specials" that change every visit
+  const shelfY = y0 + 4 * (cardH + gapY) + 10;
+  const itemGap = 12, itemW = (totalW - 2 * itemGap) / 3, itemH = 60;
+  ctx.fillStyle = '#6a6a4a'; ctx.font = '11px ui-monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  ctx.fillText("TODAY'S SHELF — one-shot extras, restocked each visit", x0, shelfY - 4);
+  const shelf = [
+    { key: '9', name: 'Spare Fuse', cost: FUSE_COST, blurb: `Forgive one walk-off. Carrying ${run.fuses}.`, fn: buyFuse, bought: false },
+    ...shop.offers.map((s, i) => ({ key: i === 0 ? '0' : '-', name: s.name, cost: s.cost, blurb: s.blurb,
+                                    fn: () => buySpecial(s), bought: !!(shop.bought && shop.bought[s.key]) })),
+  ];
+  shelf.forEach((it, i) => {
+    const ix = x0 + i * (itemW + itemGap);
+    const afford = !it.bought && run.parts >= it.cost;
+    ctx.fillStyle = '#170f14'; ctx.fillRect(ix, shelfY, itemW, itemH);
+    ctx.strokeStyle = it.bought ? '#3a5a2a' : afford ? '#d4a050' : '#3a2e22'; ctx.lineWidth = 2;
+    ctx.strokeRect(ix, shelfY, itemW, itemH);
+    ctx.fillStyle = afford ? '#d4a050' : '#5a4a32'; ctx.font = 'bold 13px ui-monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(it.key, ix + 10, shelfY + 9);
+    ctx.fillStyle = '#d4a050'; ctx.font = 'bold 14px ui-monospace'; ctx.fillText(it.name, ix + 26, shelfY + 8);
+    ctx.fillStyle = '#9a8a64'; ctx.font = '11px ui-monospace'; wrapText(it.blurb, ix + 10, shelfY + 27, itemW - 20, 13);
+    ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.font = 'bold 13px ui-monospace';
+    if (it.bought) { ctx.fillStyle = '#7aaa55'; ctx.fillText('SOLD', ix + itemW - 10, shelfY + itemH - 8); }
+    else { ctx.fillStyle = afford ? '#d4a050' : '#7a5a3a'; ctx.fillText(`◆ ${it.cost}`, ix + itemW - 10, shelfY + itemH - 8); }
+    if (!it.bought) buttons.push({ x: ix, y: shelfY, w: itemW, h: itemH, fn: it.fn });
+  });
 
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#7a6a4a'; ctx.font = '12px ui-monospace';

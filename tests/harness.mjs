@@ -18,9 +18,10 @@ const SHIM = `
   get game(){return game}, set game(v){game=v},
   get save(){return save}, set save(v){save=v},
   get menu(){return menu}, set menu(v){menu=v},
-  CFG, META, UPGRADES, MODIFIERS, SPIDER_Y, FUSE_COST, keys,
+  get shop(){return shop}, set shop(v){shop=v},
+  CFG, META, UPGRADES, MODIFIERS, SPECIALS, SPIDER_Y, FUSE_COST, keys,
   newRun, startShift, endShift, update, mods, maxStrikes, combineFx,
-  spawnPassenger, buyUpgrade, buyFuse, buyMeta, loadSave, persist,
+  spawnPassenger, buyUpgrade, buyFuse, buyMeta, buySpecial, openShop, loadSave, persist,
   nearestFloorIdx, isAligned, doorsOpen, ridersAboard, slotsAboard, capacityNow, enterSpider,
 };
 `;

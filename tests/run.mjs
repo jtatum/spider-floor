@@ -224,5 +224,35 @@ test('shift 1 is clean; later shifts roll modifiers', (G) => {
   assert.ok(G.game.modifiers.length >= 1, 'later shifts always have at least one condition');
 });
 
+test('the shop offers two rotating specials', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.openShop();
+  assert.equal(G.shop.offers.length, 2);
+  assert.notEqual(G.shop.offers[0].key, G.shop.offers[1].key, 'two distinct specials');
+});
+
+test('a special primes a one-shot effect for the next shift', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.run.parts = 50; G.openShop();
+  const overtime = G.SPECIALS.find(s => s.key === 'overtime');
+  G.buySpecial(overtime);
+  assert.equal(G.run.nextShift.extraStrike, 1, 'primed');
+  assert.ok(G.shop.bought.overtime, 'marked sold');
+  const before = G.maxStrikes();
+  G.startShift();                              // next shift consumes it
+  assert.equal(G.maxStrikes(), before + 1, 'extra strike applies this shift only');
+  G.startShift();                              // and is gone after
+  assert.equal(G.maxStrikes(), before, 'one-shot effect cleared');
+});
+
+test('a Spare Blueprint installs a random upgrade level', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.run.parts = 50; G.openShop();
+  const levelsBefore = Object.values(G.run.up).reduce((a, b) => a + b, 0);
+  G.buySpecial(G.SPECIALS.find(s => s.key === 'blueprint'));
+  const levelsAfter = Object.values(G.run.up).reduce((a, b) => a + b, 0);
+  assert.equal(levelsAfter, levelsBefore + 1, 'one upgrade level installed');
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
