@@ -57,11 +57,12 @@ function shuffle(a) {
 // Each career gets a building palette, so runs look distinct at a glance.
 // Landmarks keep their own bright colours and pop against whichever theme.
 const THEMES = [
-  { name: 'sepia', wall: '#2a1f17', wallDark: '#241a13', shaft: '#070504', col: '#1a1410', room: '#1d160f', slab: '#3a2a1c', ceil: '#0f0b07' },
-  { name: 'slate', wall: '#1c2230', wallDark: '#161b27', shaft: '#05070a', col: '#10141c', room: '#141a24', slab: '#2a3344', ceil: '#0a0d12' },
-  { name: 'moss',  wall: '#1e2a1c', wallDark: '#182316', shaft: '#060805', col: '#121a10', room: '#16200f', slab: '#2c3a22', ceil: '#0a0f07' },
-  { name: 'rust',  wall: '#301c18', wallDark: '#271613', shaft: '#0a0504', col: '#1c100c', room: '#241310', slab: '#3a221c', ceil: '#0f0705' },
-  { name: 'plum',  wall: '#261a2a', wallDark: '#1f1522', shaft: '#080510', col: '#160f1c', room: '#1b1322', slab: '#322444', ceil: '#0c0712' },
+  { name: 'sepia', wall: '#2c2016', wallDark: '#241a10', shaft: '#090604', col: '#1c150d', room: '#1f1710', slab: '#40301e', ceil: '#100b07', light: 'rgba(255,205,130,0.13)' },
+  { name: 'slate', wall: '#1d2638', wallDark: '#161e2c', shaft: '#06090e', col: '#111724', room: '#161f2e', slab: '#2f3d5c', ceil: '#0a0e16', light: 'rgba(150,200,255,0.12)' },
+  { name: 'moss',  wall: '#1f2e1a', wallDark: '#182414', shaft: '#070a05', col: '#131e11', room: '#172310', slab: '#314222', ceil: '#0a1008', light: 'rgba(200,255,150,0.11)' },
+  { name: 'rust',  wall: '#341e17', wallDark: '#2a1810', shaft: '#0b0604', col: '#20110d', room: '#28160f', slab: '#48281c', ceil: '#110805', light: 'rgba(255,170,110,0.13)' },
+  { name: 'plum',  wall: '#281d30', wallDark: '#201627', shaft: '#0a0613', col: '#191122', room: '#1f152d', slab: '#3a2950', ceil: '#0d0815', light: 'rgba(220,170,255,0.12)' },
+  { name: 'teal',  wall: '#142a2a', wallDark: '#0f2121', shaft: '#040d0d', col: '#0c1c1c', room: '#102323', slab: '#1c4040', ceil: '#071111', light: 'rgba(140,255,230,0.11)' },
 ];
 // acc (landmark) per floor index; floor 0 is always the lobby
 function generateBuilding() {
@@ -899,7 +900,7 @@ let screenFade = 0, lastScreen = null;
 function drawVignette() {
   const g = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.8);
   g.addColorStop(0, 'rgba(0,0,0,0)');
-  g.addColorStop(1, 'rgba(0,0,0,0.38)');
+  g.addColorStop(1, 'rgba(24,10,0,0.36)');   // warm amber-tinted edges, not flat black
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
 }
 
@@ -1066,6 +1067,14 @@ function drawFloor(f, sy) {
   const th = run.theme;
   ctx.fillStyle = th.room;
   ctx.fillRect(ROOM_LEFT, top, ROOM_RIGHT - ROOM_LEFT, CFG.floorHeight);
+  // a small warm pool of light under each ceiling lamp — depth, not a flood
+  const lx = ROOM_LEFT + (ROOM_RIGHT - ROOM_LEFT) * 0.62;
+  const lg = ctx.createRadialGradient(lx, top + 4, 4, lx, top + 4, 96);
+  lg.addColorStop(0, th.light || 'rgba(255,210,140,0.13)');
+  lg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = lg; ctx.fillRect(ROOM_LEFT, top, ROOM_RIGHT - ROOM_LEFT, CFG.floorHeight * 0.7);
+  // the lamp itself
+  ctx.fillStyle = 'rgba(255,228,170,0.85)'; ctx.fillRect(lx - 9, top + 3, 18, 3);
   ctx.fillStyle = th.slab;
   ctx.fillRect(ROOM_LEFT, bot - 8, ROOM_RIGHT - ROOM_LEFT, 8);
   ctx.fillStyle = th.ceil;
@@ -1103,107 +1112,118 @@ function drawLandmark(f, x, y) {
       ctx.fillStyle = '#3a5a28'; ctx.beginPath(); ctx.arc(x - 85, y + 22, 11, 0, 7); ctx.fill();
       break;
     case 'red':
-      ctx.fillStyle = '#7a2418'; ctx.fillRect(x, y - 40, 60, 80);
-      ctx.fillStyle = '#bfa45f'; ctx.beginPath(); ctx.arc(x + 50, y, 3, 0, 7); ctx.fill();
+      ctx.fillStyle = '#d23f2c'; ctx.fillRect(x, y - 40, 60, 80);
+      ctx.fillStyle = '#8a2418'; ctx.fillRect(x, y - 40, 6, 80);
+      ctx.fillStyle = '#ffd44a'; ctx.beginPath(); ctx.arc(x + 50, y, 3, 0, 7); ctx.fill();
       break;
     case 'plant':
-      ctx.fillStyle = '#5a3a20'; ctx.fillRect(x + 10, y + 20, 36, 36);
-      ctx.fillStyle = '#3a5a28'; ctx.beginPath(); ctx.ellipse(x + 28, y + 5, 26, 32, 0, 0, 7); ctx.fill();
-      ctx.fillStyle = '#4a6a30'; ctx.beginPath(); ctx.ellipse(x + 18, y - 8, 14, 18, 0.3, 0, 7); ctx.fill();
+      ctx.fillStyle = '#9a5e2e'; ctx.fillRect(x + 10, y + 20, 36, 36);
+      ctx.fillStyle = '#46a634'; ctx.beginPath(); ctx.ellipse(x + 28, y + 5, 26, 32, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#62c84a'; ctx.beginPath(); ctx.ellipse(x + 18, y - 8, 14, 18, 0.3, 0, 7); ctx.fill();
+      ctx.fillStyle = '#8ae060'; ctx.beginPath(); ctx.ellipse(x + 38, y - 4, 10, 14, -0.4, 0, 7); ctx.fill();
       break;
     case 'fire':
-      ctx.fillStyle = '#882018'; ctx.fillRect(x + 20, y + 5, 22, 50);
+      ctx.fillStyle = '#e2402c'; ctx.fillRect(x + 20, y + 5, 22, 50);
       ctx.fillStyle = '#1a1410'; ctx.fillRect(x + 24, y - 4, 14, 10);
-      ctx.fillStyle = '#bfa45f'; ctx.fillRect(x + 22, y + 18, 18, 4);
+      ctx.fillStyle = '#ffe07a'; ctx.fillRect(x + 22, y + 18, 18, 4);
       break;
     case 'art':
-      ctx.fillStyle = '#3a2a1c'; ctx.fillRect(x - 10, y - 40, 70, 56);
-      ctx.fillStyle = '#604070'; ctx.fillRect(x - 5, y - 35, 60, 46);
-      ctx.fillStyle = '#a08060'; ctx.fillRect(x + 5, y - 18, 18, 22);
-      ctx.fillStyle = '#d4a050'; ctx.beginPath(); ctx.arc(x + 35, y - 22, 5, 0, 7); ctx.fill();
+      ctx.fillStyle = '#caa33a'; ctx.fillRect(x - 10, y - 40, 70, 56);
+      ctx.fillStyle = '#9a58da'; ctx.fillRect(x - 5, y - 35, 60, 46);
+      ctx.fillStyle = '#ff9a40'; ctx.beginPath(); ctx.arc(x + 14, y - 6, 11, 0, 7); ctx.fill();
+      ctx.fillStyle = '#40c0d0'; ctx.fillRect(x + 30, y - 28, 18, 30);
       break;
     case 'blue':
-      ctx.fillStyle = '#1a3a7a'; ctx.fillRect(x, y - 40, 60, 80);
-      ctx.fillStyle = '#bfa45f'; ctx.beginPath(); ctx.arc(x + 50, y, 3, 0, 7); ctx.fill();
+      ctx.fillStyle = '#2f6ae0'; ctx.fillRect(x, y - 40, 60, 80);
+      ctx.fillStyle = '#1a3a8a'; ctx.fillRect(x, y - 40, 6, 80);
+      ctx.fillStyle = '#ffd44a'; ctx.beginPath(); ctx.arc(x + 50, y, 3, 0, 7); ctx.fill();
       break;
     case 'crack':
-      ctx.fillStyle = '#3a2a1c'; ctx.fillRect(x + 10, y - 50, 40, 100);
-      ctx.strokeStyle = '#0d0a08'; ctx.lineWidth = 2; ctx.beginPath();
+      ctx.fillStyle = '#5a4632'; ctx.fillRect(x + 10, y - 50, 40, 100);
+      ctx.strokeStyle = '#1a120c'; ctx.lineWidth = 2; ctx.beginPath();
       ctx.moveTo(x + 30, y - 50); ctx.lineTo(x + 42, y - 28); ctx.lineTo(x + 22, y - 8);
       ctx.lineTo(x + 38, y + 18); ctx.lineTo(x + 24, y + 42); ctx.stroke();
       break;
     case 'clock':
-      ctx.strokeStyle = '#bfa45f'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(x + 28, y - 6, 24, 0, 7); ctx.stroke();
-      ctx.lineWidth = 2; ctx.beginPath();
+      ctx.fillStyle = '#f0e0c0'; ctx.beginPath(); ctx.arc(x + 28, y - 6, 24, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#3a2a1c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x + 28, y - 6, 24, 0, 7); ctx.stroke();
+      ctx.strokeStyle = '#b23030'; ctx.lineWidth = 2; ctx.beginPath();
       ctx.moveTo(x + 28, y - 6); ctx.lineTo(x + 28, y - 24);
       ctx.moveTo(x + 28, y - 6); ctx.lineTo(x + 42, y - 6); ctx.stroke();
       break;
     case 'vend':
-      ctx.fillStyle = '#244a3a'; ctx.fillRect(x + 6, y - 44, 44, 88);
-      ctx.fillStyle = '#0d0a08'; ctx.fillRect(x + 12, y - 38, 22, 50);
-      ctx.fillStyle = '#d4a050'; ctx.fillRect(x + 38, y - 30, 8, 30);
-      for (let i = 0; i < 3; i++) { ctx.fillStyle = '#7aaa55'; ctx.fillRect(x + 15, y - 34 + i * 14, 16, 8); }
+      ctx.fillStyle = '#d23f2c'; ctx.fillRect(x + 6, y - 44, 44, 88);
+      ctx.fillStyle = '#101418'; ctx.fillRect(x + 12, y - 38, 22, 50);
+      ctx.fillStyle = '#ffd44a'; ctx.fillRect(x + 38, y - 30, 8, 30);
+      const vcol = ['#ff6a4a', '#4ad0ff', '#8ae060'];
+      for (let i = 0; i < 3; i++) { ctx.fillStyle = vcol[i]; ctx.fillRect(x + 15, y - 34 + i * 14, 16, 8); }
       break;
     case 'green':
-      ctx.fillStyle = '#2a5a2a'; ctx.fillRect(x, y - 40, 60, 80);
-      ctx.fillStyle = '#bfa45f'; ctx.beginPath(); ctx.arc(x + 50, y, 3, 0, 7); ctx.fill();
+      ctx.fillStyle = '#37a83a'; ctx.fillRect(x, y - 40, 60, 80);
+      ctx.fillStyle = '#1f6a24'; ctx.fillRect(x, y - 40, 6, 80);
+      ctx.fillStyle = '#ffd44a'; ctx.beginPath(); ctx.arc(x + 50, y, 3, 0, 7); ctx.fill();
       break;
     case 'window':
-      ctx.fillStyle = '#22344a'; ctx.fillRect(x, y - 46, 64, 92);
+      ctx.fillStyle = '#3f74c0'; ctx.fillRect(x, y - 46, 64, 92);
+      ctx.fillStyle = '#9ad0ff'; ctx.fillRect(x, y - 46, 64, 30);   // bright sky band
       ctx.strokeStyle = '#3a2a1c'; ctx.lineWidth = 3;
       ctx.strokeRect(x, y - 46, 64, 92);
       ctx.beginPath(); ctx.moveTo(x + 32, y - 46); ctx.lineTo(x + 32, y + 46);
       ctx.moveTo(x, y); ctx.lineTo(x + 64, y); ctx.stroke();
-      ctx.fillStyle = 'rgba(212,180,120,0.25)';
+      ctx.fillStyle = 'rgba(255,245,210,0.35)';
       ctx.beginPath(); ctx.moveTo(x + 4, y - 42); ctx.lineTo(x + 28, y - 42); ctx.lineTo(x + 4, y - 8); ctx.fill();
       break;
     case 'penthouse':
-      ctx.fillStyle = '#bfa45f'; ctx.font = 'bold 22px ui-monospace'; ctx.textAlign = 'center';
-      ctx.fillText('✦ PH ✦', x + 30, y);
-      ctx.strokeStyle = '#bfa45f'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(x - 20, y + 26); ctx.lineTo(x + 80, y + 26); ctx.stroke();
-      for (let i = -2; i <= 2; i++) { ctx.fillStyle = '#d4a050'; ctx.beginPath(); ctx.arc(x + 30 + i * 12, y - 36, 2, 0, 7); ctx.fill(); }
+      ctx.fillStyle = '#b23a4a'; ctx.fillRect(x - 20, y + 22, 100, 8);   // red carpet
+      ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 22px ui-monospace'; ctx.textAlign = 'center';
+      ctx.shadowColor = '#ffd44a'; ctx.shadowBlur = 10;
+      ctx.fillText('✦ PH ✦', x + 30, y); ctx.shadowBlur = 0;
+      const pcol = ['#ff6a6a', '#ffd44a', '#7affc0', '#6ab8ff', '#d88aff'];
+      for (let i = -2; i <= 2; i++) { ctx.fillStyle = pcol[i + 2]; ctx.beginPath(); ctx.arc(x + 30 + i * 12, y - 36, 2.4, 0, 7); ctx.fill(); }
       break;
     case 'mirror':
-      ctx.fillStyle = '#9ab0b8'; ctx.fillRect(x + 6, y - 44, 44, 88);
-      ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      ctx.fillStyle = '#b6d2da'; ctx.fillRect(x + 6, y - 44, 44, 88);
+      ctx.fillStyle = 'rgba(255,255,255,0.28)';
       ctx.beginPath(); ctx.moveTo(x + 10, y - 40); ctx.lineTo(x + 30, y - 40); ctx.lineTo(x + 10, y + 8); ctx.fill();
-      ctx.strokeStyle = '#3a2a1c'; ctx.lineWidth = 3; ctx.strokeRect(x + 6, y - 44, 44, 88);
+      ctx.strokeStyle = '#caa33a'; ctx.lineWidth = 3; ctx.strokeRect(x + 6, y - 44, 44, 88);
       break;
     case 'neon':
       ctx.fillStyle = '#ff5aa0'; ctx.font = 'bold 22px ui-monospace'; ctx.textAlign = 'center';
-      ctx.shadowColor = '#ff5aa0'; ctx.shadowBlur = 12;
-      ctx.fillText('OPEN', x + 30, y - 4); ctx.shadowBlur = 0;
-      ctx.strokeStyle = '#ff5aa0'; ctx.lineWidth = 2;
-      ctx.strokeRect(x + 4, y - 22, 56, 36);
+      ctx.shadowColor = '#ff5aa0'; ctx.shadowBlur = 14;
+      ctx.fillText('OPEN', x + 30, y - 4);
+      ctx.strokeStyle = '#5af0ff'; ctx.lineWidth = 2; ctx.shadowColor = '#5af0ff';
+      ctx.strokeRect(x + 4, y - 22, 56, 36); ctx.shadowBlur = 0;
       break;
     case 'pipes':
-      ctx.strokeStyle = '#6a7a4a'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+      ctx.strokeStyle = '#3aa890'; ctx.lineWidth = 6; ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(x + 8, y - 46); ctx.lineTo(x + 8, y + 10); ctx.lineTo(x + 40, y + 10); ctx.lineTo(x + 40, y + 46);
       ctx.moveTo(x + 24, y - 46); ctx.lineTo(x + 24, y - 12); ctx.lineTo(x + 52, y - 12);
       ctx.stroke();
-      ctx.fillStyle = '#8a9a5a'; ctx.beginPath(); ctx.arc(x + 8, y + 10, 5, 0, 7); ctx.fill();
+      ctx.fillStyle = '#e2402c'; ctx.beginPath(); ctx.arc(x + 8, y + 10, 5, 0, 7); ctx.fill();   // red valve
       break;
     case 'cat':
-      ctx.fillStyle = '#3a3030'; // a cat curled on the floor
+      ctx.fillStyle = '#e08a3a'; // a ginger cat curled on the floor
       ctx.beginPath(); ctx.ellipse(x + 28, y + 30, 20, 11, 0, 0, 7); ctx.fill();
       ctx.beginPath(); ctx.arc(x + 12, y + 26, 8, 0, 7); ctx.fill();
       ctx.beginPath(); ctx.moveTo(x + 7, y + 20); ctx.lineTo(x + 9, y + 14); ctx.lineTo(x + 13, y + 20);
       ctx.moveTo(x + 13, y + 20); ctx.lineTo(x + 16, y + 14); ctx.lineTo(x + 19, y + 20); ctx.fill();
-      ctx.strokeStyle = '#3a3030'; ctx.lineWidth = 3;
+      ctx.fillStyle = '#c4762e'; ctx.fillRect(x + 30, y + 24, 4, 12); ctx.fillRect(x + 38, y + 22, 4, 14); // stripes
+      ctx.strokeStyle = '#e08a3a'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.moveTo(x + 46, y + 30); ctx.quadraticCurveTo(x + 58, y + 24, x + 52, y + 14); ctx.stroke();
-      ctx.fillStyle = '#9aca6a'; ctx.beginPath(); ctx.arc(x + 10, y + 25, 1.4, 0, 7); ctx.arc(x + 15, y + 25, 1.4, 0, 7); ctx.fill();
+      ctx.fillStyle = '#c83a5a'; ctx.fillRect(x + 5, y + 30, 14, 2);   // collar
+      ctx.fillStyle = '#6cd84a'; ctx.beginPath(); ctx.arc(x + 10, y + 25, 1.6, 0, 7); ctx.arc(x + 15, y + 25, 1.6, 0, 7); ctx.fill();
       break;
     case 'aquarium':
-      ctx.fillStyle = '#14506a'; ctx.fillRect(x + 4, y - 30, 56, 60);
-      ctx.fillStyle = 'rgba(120,200,220,0.25)'; ctx.fillRect(x + 4, y - 30, 56, 18);
-      ctx.strokeStyle = '#2a2018'; ctx.lineWidth = 3; ctx.strokeRect(x + 4, y - 30, 56, 60);
-      ctx.fillStyle = '#ffa040'; // fish
-      ctx.beginPath(); ctx.ellipse(x + 28, y, 6, 4, 0, 0, 7); ctx.fill();
-      ctx.beginPath(); ctx.moveTo(x + 34, y); ctx.lineTo(x + 40, y - 4); ctx.lineTo(x + 40, y + 4); ctx.fill();
-      ctx.fillStyle = '#3a7a4a'; ctx.fillRect(x + 14, y + 6, 4, 22); ctx.fillRect(x + 46, y + 2, 4, 26);
+      ctx.fillStyle = '#1a7aaa'; ctx.fillRect(x + 4, y - 30, 56, 60);
+      ctx.fillStyle = 'rgba(150,225,245,0.35)'; ctx.fillRect(x + 4, y - 30, 56, 18);
+      ctx.strokeStyle = '#caa33a'; ctx.lineWidth = 3; ctx.strokeRect(x + 4, y - 30, 56, 60);
+      ctx.fillStyle = '#ff8030';
+      ctx.beginPath(); ctx.ellipse(x + 26, y - 4, 6, 4, 0, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(x + 32, y - 4); ctx.lineTo(x + 38, y - 8); ctx.lineTo(x + 38, y); ctx.fill();
+      ctx.fillStyle = '#ffd44a';
+      ctx.beginPath(); ctx.ellipse(x + 42, y + 10, 5, 3, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#4ae0a0'; ctx.fillRect(x + 14, y + 6, 4, 22); ctx.fillRect(x + 48, y + 2, 4, 26);
       break;
   }
   ctx.restore();
@@ -1215,20 +1235,29 @@ function drawCar() {
   const w = CFG.carWidth, h = CFG.carHeight;
   const left = cx - w / 2, top = cy - h / 2;
 
-  ctx.strokeStyle = '#4a3a2a'; ctx.lineWidth = 3;
+  // a soft warm glow the cabin casts into the shaft — the lift is the warmest thing here
+  const halo = ctx.createRadialGradient(cx, cy, 24, cx, cy, 150);
+  halo.addColorStop(0, 'rgba(255,200,120,0.10)');
+  halo.addColorStop(1, 'rgba(255,200,120,0)');
+  ctx.fillStyle = halo; ctx.fillRect(SHAFT_LEFT, cy - 150, SHAFT_RIGHT - SHAFT_LEFT, 300);
+
+  ctx.strokeStyle = '#5a4632'; ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.moveTo(cx, 0); ctx.lineTo(cx, top);
   ctx.moveTo(cx, top + h); ctx.lineTo(cx, H); ctx.stroke();
 
-  ctx.fillStyle = game.elev.jamFlash > 0 ? '#7a3a2a' : '#5a4530';
+  ctx.fillStyle = game.elev.jamFlash > 0 ? '#9a4a32' : '#6a5238';
   ctx.fillRect(left, top, w, h);
-  ctx.fillStyle = '#3a2a1c';
+  ctx.fillStyle = '#42301e';
   ctx.fillRect(left + 4, top + 4, w - 8, h - 8);
-  ctx.fillStyle = '#ffdd99';
+  ctx.save();
+  ctx.shadowColor = '#ffdd99'; ctx.shadowBlur = 16;
+  ctx.fillStyle = '#ffe6b0';
   ctx.fillRect(cx - 18, top + 6, 36, 4);
+  ctx.restore();
   const grad = ctx.createLinearGradient(0, top, 0, top + h);
-  grad.addColorStop(0, 'rgba(255,220,150,0.10)');
-  grad.addColorStop(1, 'rgba(255,220,150,0)');
+  grad.addColorStop(0, 'rgba(255,222,150,0.16)');
+  grad.addColorStop(1, 'rgba(255,222,150,0)');
   ctx.fillStyle = grad; ctx.fillRect(left + 4, top + 4, w - 8, h - 8);
 
   const m = game.m;
@@ -1304,8 +1333,8 @@ function drawPassenger(p, x, footY, mode) {
   const bob = Math.sin(p.bob) * 1.5;
   const fy = footY + bob;
   const skin = ['#d4a878', '#a87850', '#7a5838', '#5a3820'][p.skin];
-  const coatByKind = { vip: '#caa33a', tipper: '#3a8a5a', mover: '#7a5a36', nervous: '#5a6a82' };
-  const coat = coatByKind[p.kind] || ['#3a5a78', '#5a3a4a', '#3a4a3a', '#5a4530', '#604070'][p.coat];
+  const coatByKind = { vip: '#e8c040', tipper: '#3aae6a', mover: '#a87a44', nervous: '#6a8ac8' };
+  const coat = coatByKind[p.kind] || ['#4a82c0', '#b8506e', '#46985a', '#c08440', '#9560d8'][p.coat];
 
   // a mover hauls a suitcase
   if (p.kind === 'mover') {
