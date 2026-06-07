@@ -275,5 +275,31 @@ test('a Spare Blueprint installs a random upgrade level', (G) => {
   assert.equal(levelsAfter, levelsBefore + 1, 'one upgrade level installed');
 });
 
+test('a full career plays many shifts through the live loop without breaking', (G) => {
+  G.run = G.newRun(); G.startShift();
+  const goOpen = (idx) => { const e = G.game.elev; e.y = idx * G.CFG.floorHeight; e.v = 0; e.doorTarget = 1; e.doors = 1; G.step(2); };
+  const shut = () => { const e = G.game.elev; e.doorTarget = 0; e.doors = 0; G.step(2); };
+  let guard = 0;
+  while (G.run.shiftNum < 8 && guard++ < 30000) {
+    const st = G.game.state;
+    if (st === 'PLAYING') {
+      const riders = G.game.passengers.filter(p => p.state === 'riding');
+      const waiting = G.game.passengers.filter(p => p.state === 'waiting');
+      if (riders.length) { goOpen(riders[0].dest); shut(); }
+      else if (waiting.length) { goOpen(0); shut(); }
+      else { shut(); G.step(20); }
+    } else if (st === 'SHIFT_DONE') {
+      G.openShop();
+      for (const u of G.UPGRADES)
+        if (G.run.up[u.key] < u.max && G.run.parts >= u.costs[G.run.up[u.key]]) G.buyUpgrade(u);
+      G.startShift();
+    } else if (st === 'SPIDER') {
+      G.keys.add('arrowup'); G.step(3); G.keys.delete('arrowup'); G.step(100);
+    } else if (st === 'FIRED') break;
+  }
+  assert.ok(G.run.shiftNum >= 2, `played multiple shifts (reached ${G.run.shiftNum})`);
+  assert.ok(G.run.totalDelivered > 0, 'delivered passengers across the career');
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
