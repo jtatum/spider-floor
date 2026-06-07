@@ -843,6 +843,7 @@ function render() {
   ctx.fillRect(-20, -20, W + 40, H + 40);
 
   const st = menu || (game ? game.state : 'TITLE');
+  if (st !== lastScreen) { screenFade = 1; lastScreen = st; }   // fade-in on every screen change
   if (st === 'WORKSHOP')   drawWorkshop();
   else if (st === 'TITLE') drawTitle();
   else if (st === 'SHOP')  drawShop();
@@ -865,8 +866,15 @@ function render() {
     if (st === 'SHIFT_DONE') drawShiftDone();
     if (st === 'FIRED') drawFired();
   }
+
+  if (screenFade > 0) {           // fade-in-from-black on screen changes
+    ctx.fillStyle = `rgba(8,6,4,${screenFade})`;
+    ctx.fillRect(-20, -20, W + 40, H + 40);
+    screenFade = Math.max(0, screenFade - 0.07);
+  }
   ctx.restore();
 }
+let screenFade = 0, lastScreen = null;
 
 // soft darkened edges for depth/mood
 function drawVignette() {
@@ -957,6 +965,15 @@ function drawBuilding() {
   ctx.lineWidth = 2;
   for (const x of [SHAFT_LEFT + 14, SHAFT_RIGHT - 14]) {
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+
+  // motes of dust drifting down the shaft — quiet atmosphere
+  const span = SHAFT_RIGHT - SHAFT_LEFT - 24;
+  for (let i = 0; i < 22; i++) {
+    const x = SHAFT_LEFT + 12 + (i * 67.3) % span + Math.sin(game.t * 0.5 + i) * 3;
+    const y = (game.t * 7 + i * 41) % (H + 20) - 10;
+    ctx.fillStyle = `rgba(200,180,130,${0.05 + 0.04 * (i % 3)})`;
+    ctx.fillRect(x, y, 2, 2);
   }
 
   for (const f of game.floors) drawFloor(f, worldToScreen(game.floors.indexOf(f) * CFG.floorHeight));
@@ -1433,7 +1450,32 @@ function drawBanner() {
 }
 
 // ── title ──
+function drawTitleArt() {
+  // warm glow behind the wordmark
+  const g = ctx.createRadialGradient(W / 2, 150, 20, W / 2, 150, 380);
+  g.addColorStop(0, 'rgba(150,110,50,0.16)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, 320);
+
+  // a little elevator, bobbing on its cable, as a logo
+  const t = performance.now() / 1000;
+  const cx = W / 2, cy = 74 + Math.sin(t * 1.5) * 4, cw = 52, ch = 38;
+  ctx.strokeStyle = '#2a2018'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(cx, 18); ctx.lineTo(cx, cy - ch / 2); ctx.stroke();
+  ctx.fillStyle = '#5a4530'; ctx.fillRect(cx - cw / 2, cy - ch / 2, cw, ch);
+  ctx.fillStyle = '#3a2a1c'; ctx.fillRect(cx - cw / 2 + 3, cy - ch / 2 + 3, cw - 6, ch - 6);
+  ctx.fillStyle = '#ffdd99'; ctx.fillRect(cx - 7, cy - ch / 2 + 4, 14, 3);
+  // two tiny passengers aboard
+  ctx.fillStyle = '#3a5a78'; ctx.fillRect(cx - 12, cy - 2, 6, 9);
+  ctx.fillStyle = '#5a3a4a'; ctx.fillRect(cx + 5, cy - 2, 6, 9);
+  ctx.fillStyle = '#d4a878';
+  ctx.beginPath(); ctx.arc(cx - 9, cy - 5, 3, 0, 7); ctx.arc(cx + 8, cy - 5, 3, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#bfa45f'; ctx.lineWidth = 1;
+  ctx.strokeRect(cx - cw / 2 + 0.5, cy - ch / 2 + 0.5, cw - 1, ch - 1);
+  ctx.beginPath(); ctx.moveTo(cx, cy - ch / 2 + 3); ctx.lineTo(cx, cy + ch / 2 - 3); ctx.stroke();
+}
+
 function drawTitle() {
+  drawTitleArt();
   ctx.fillStyle = '#bfa45f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = 'bold 44px ui-monospace, Menlo, monospace';
   ctx.fillText('THE WORST ELEVATOR', W / 2, 150);
