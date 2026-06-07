@@ -13,23 +13,43 @@ const buyMeta = (G, key) => G.buyMeta(G.META.find(m => m.key === key));
 const openDoorsAt = (G, floorIdx) => {
   const e = G.game.elev; e.y = floorIdx * G.CFG.floorHeight; e.v = 0; e.doorTarget = 1; e.doors = 1;
 };
+// force a deterministic passenger kind/size (spawns are random by design)
+const normalize = (p) => { p.kind = 'normal'; p.size = 1; p.vip = false; return p; };
+const addRider = (G, dest, kind = 'normal') => {
+  G.spawnPassenger(); const p = G.game.passengers.at(-1);
+  p.dest = dest; p.kind = kind; p.vip = kind === 'vip'; p.size = kind === 'mover' ? 2 : 1;
+  p.state = 'riding'; p.reveal = 0; return p;
+};
 
 // ── core loop ───────────────────────────────────────────────────────────────
 
 test('cabin capacity is enforced (no clown car)', (G) => {
   G.run = G.newRun(); G.startShift();
   G.game.passengers = [];
-  for (let i = 0; i < 12; i++) G.spawnPassenger();
+  for (let i = 0; i < 12; i++) { G.spawnPassenger(); normalize(G.game.passengers.at(-1)); }
   openDoorsAt(G, 0);
   G.step(4);
   const riding = G.game.passengers.filter(p => p.state === 'riding').length;
   assert.equal(riding, G.game.m.capacity, `expected ${G.game.m.capacity} aboard, got ${riding}`);
 });
 
+test('a mover takes two cabin slots', (G) => {
+  G.run = G.newRun(); G.startShift();           // base capacity 4
+  G.game.passengers = [];
+  G.spawnPassenger(); const mover = G.game.passengers.at(-1); mover.kind = 'mover'; mover.size = 2; mover.vip = false;
+  for (let i = 0; i < 6; i++) normalize((G.spawnPassenger(), G.game.passengers.at(-1)));
+  openDoorsAt(G, 0);
+  G.step(4);
+  assert.equal(G.slotsAboard(), G.capacityNow(), 'cabin filled to slot capacity');
+  assert.ok(G.slotsAboard() <= G.capacityNow(), 'never over capacity');
+  assert.ok(G.game.passengers.filter(p => p.state === 'riding').length < G.capacityNow(),
+    'fewer heads than slots because the mover eats two');
+});
+
 test('delivering a rider at its floor pays a fare', (G) => {
   G.run = G.newRun(); G.startShift();
-  G.game.passengers = []; G.spawnPassenger();
-  const p = G.game.passengers.at(-1); p.dest = 2; p.state = 'riding';
+  G.game.passengers = [];
+  const p = addRider(G, 2, 'normal');
   openDoorsAt(G, 2);
   const before = G.run.parts;
   G.step(3);
@@ -37,10 +57,20 @@ test('delivering a rider at its floor pays a fare', (G) => {
   assert.equal(G.run.parts - before, 1, 'base fare is 1 part');
 });
 
+test('a tipper pays the fare plus a tip', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.game.passengers = [];
+  const p = addRider(G, 2, 'tipper');
+  openDoorsAt(G, 2);
+  const before = G.run.parts;
+  G.step(3);
+  assert.equal(G.run.parts - before, 3, 'base 1 + tip 2');
+});
+
 test('opening at the wrong floor delivers nobody', (G) => {
   G.run = G.newRun(); G.startShift();
-  G.game.passengers = []; G.spawnPassenger();
-  const p = G.game.passengers.at(-1); p.dest = 3; p.state = 'riding'; p.patience = 999;
+  G.game.passengers = [];
+  const p = addRider(G, 3, 'normal'); p.patience = 999;
   openDoorsAt(G, 2);              // wrong floor
   G.step(5);
   assert.equal(p.state, 'riding', 'rider should stay aboard');
@@ -60,8 +90,7 @@ test('a walk-off costs a strike; a Spare Fuse forgives the first', (G) => {
 test('hitting quota completes the shift with a bonus', (G) => {
   G.run = G.newRun(); G.startShift();
   G.game.delivered = G.game.quota - 1;
-  G.game.passengers = []; G.spawnPassenger();
-  const p = G.game.passengers.at(-1); p.dest = 2; p.state = 'riding';
+  G.game.passengers = []; addRider(G, 2, 'normal');
   openDoorsAt(G, 2);
   G.step(3);
   assert.equal(G.game.state, 'SHIFT_DONE');
@@ -170,12 +199,29 @@ test('Workshop: a perk caps at max and refuses when you cannot afford it', (G) =
 test('Frequent Flyer raises every fare by +1', (G) => {
   G.save.stars = 100; buyMeta(G, 'frequentFlyer');
   G.run = G.newRun(); G.startShift();
-  G.game.passengers = []; G.spawnPassenger();
-  const p = G.game.passengers.at(-1); p.dest = 2; p.state = 'riding';
+  G.game.passengers = []; addRider(G, 2, 'normal');
   openDoorsAt(G, 2);
   const before = G.run.parts;
   G.step(3);
   assert.equal(G.run.parts - before, 2, 'base 1 + Frequent Flyer 1');
+});
+
+test('modifiers combine (RUSH HOUR speeds spawns and boosts fares)', (G) => {
+  const fx = G.combineFx([G.MODIFIERS.find(m => m.key === 'rush')]);
+  assert.ok(fx.spawnMul < 1, 'spawns come faster');
+  assert.ok(fx.fareMul > 1, 'fares pay more');
+  // two modifiers stack
+  const both = G.combineFx([G.MODIFIERS.find(m => m.key === 'cramped'), G.MODIFIERS.find(m => m.key === 'gala')]);
+  assert.equal(both.capDelta, -1, 'cramped removes a slot');
+  assert.ok(both.vipMul > 1, 'gala raises VIP odds');
+});
+
+test('shift 1 is clean; later shifts roll modifiers', (G) => {
+  G.run = G.newRun(); G.startShift();
+  assert.equal(G.game.modifiers.length, 0, 'onboarding shift has no conditions');
+  G.run.shiftNum = 5; // next startShift → shift 6
+  G.startShift();
+  assert.ok(G.game.modifiers.length >= 1, 'later shifts always have at least one condition');
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

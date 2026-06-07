@@ -35,23 +35,31 @@ const CFG = {
   strikesAllowed: 3,
 };
 
-// A pool of distinct floors. Each shift activates a prefix of this list,
-// so early shifts are short buildings and later ones are towers.
-// `acc` selects a hand-drawn landmark so you can navigate by sight.
-const FLOOR_POOL = [
-  { label: 'L',  acc: 'lobby' },
-  { label: '2',  acc: 'red' },
-  { label: '3',  acc: 'plant' },
-  { label: '4',  acc: 'fire' },
-  { label: '5',  acc: 'art' },
-  { label: '6',  acc: 'blue' },
-  { label: '7',  acc: 'crack' },
-  { label: '8',  acc: 'clock' },
-  { label: '9',  acc: 'vend' },
-  { label: '10', acc: 'green' },
-  { label: '11', acc: 'window' },
-  { label: 'PH', acc: 'penthouse' },
-];
+// Floor numbers are fixed, but the LANDMARK on each floor is shuffled every
+// career — so you re-learn the building each run (and can't lean on muscle
+// memory from last time). The landmark is your only wayfinding: there are no
+// painted numbers. There are more landmarks than floors, so each run also draws
+// a different *subset*.
+const FLOOR_LABELS = ['L', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', 'PH'];
+const MAX_FLOORS = FLOOR_LABELS.length;
+const LANDMARKS = ['red', 'plant', 'fire', 'art', 'blue', 'crack', 'clock', 'vend',
+                   'green', 'window', 'penthouse', 'mirror', 'neon', 'pipes', 'cat', 'aquarium'];
+
+function shuffle(a) {
+  a = a.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+// acc (landmark) per floor index; floor 0 is always the lobby
+function generateBuilding() {
+  const picks = shuffle(LANDMARKS);
+  const b = ['lobby'];
+  for (let i = 1; i < MAX_FLOORS; i++) b.push(picks[i - 1]);
+  return b;
+}
 
 // Upgrades — the relief arc. Each removes a specific pain point.
 const UPGRADES = [
@@ -74,6 +82,68 @@ const UPGRADES = [
   { key: 'capacity',    name: 'Bigger Cabin',    max: 2, costs: [6, 8],
     blurb: ['Carry one more passenger.', 'Carry two more passengers.'] },
 ];
+
+// Shift modifiers — rolled conditions that reshape a shift. The roguelike spice:
+// no two shifts (and no two runs) play the same. `tone` colours the banner.
+const MODIFIERS = [
+  { key: 'rush',     name: 'RUSH HOUR',      tone: 'wild', desc: 'A flood of passengers — but every fare pays more.',
+    fx: { spawnMul: 0.6, fareMul: 1.5 } },
+  { key: 'slow',     name: 'SLOW MORNING',   tone: 'good', desc: 'Few passengers, and a patient crowd.',
+    fx: { spawnMul: 1.7, patMul: 1.3 } },
+  { key: 'shortfuse',name: 'SHORT FUSES',    tone: 'bad',  desc: 'Everyone is in a foul mood. Patience runs short.',
+    fx: { patMul: 0.62 } },
+  { key: 'slippery', name: 'SLIPPERY CABLES',tone: 'bad',  desc: 'The brake is shot. The car barely wants to stop.',
+    fx: { coast: 0.7 } },
+  { key: 'blackout', name: 'POWER FLICKER',  tone: 'bad',  desc: 'The landmarks keep dropping into shadow.',
+    fx: { dark: 0.72 } },
+  { key: 'gala',     name: 'VIP GALA',       tone: 'good', desc: 'The building is crawling with VIPs tonight.',
+    fx: { vipMul: 3.2 } },
+  { key: 'cramped',  name: 'CRAMPED CAR',    tone: 'bad',  desc: 'Half the cabin is roped off. One fewer rider.',
+    fx: { capDelta: -1 } },
+  { key: 'freight',  name: 'FREIGHT DAY',    tone: 'wild', desc: 'Movers everywhere, hauling luggage that hogs the cabin.',
+    fx: { moverMul: 5 } },
+  { key: 'night',    name: 'GRAVEYARD SHIFT',tone: 'wild', desc: 'Quiet… and the Spider Floor stirs early and often.',
+    fx: { spiderMul: 0.35, forceSpider: true, dark: 0.4, spawnMul: 1.25 } },
+  { key: 'express',  name: 'EVERYONE UP',    tone: 'wild', desc: 'The whole crowd is headed for the upper floors.',
+    fx: { destHigh: true, fareMul: 1.25 } },
+  { key: 'tippers',  name: 'GENEROUS TIPPERS',tone: 'good',desc: 'Big tippers about — and fares run a little richer.',
+    fx: { tipperMul: 5, fareMul: 1.15 } },
+  { key: 'nervous',  name: 'NERVOUS WRECKS', tone: 'bad',  desc: 'A jittery crowd that fumes the moment you dawdle.',
+    fx: { nervousMul: 5, patMul: 0.88 } },
+];
+
+function combineFx(mods) {
+  const fx = { spawnMul: 1, patMul: 1, fareMul: 1, vipMul: 1, capDelta: 0, coast: 0,
+               spiderMul: 1, dark: 0, destHigh: false, moverMul: 1, nervousMul: 1,
+               tipperMul: 1, forceSpider: false };
+  for (const md of mods) {
+    const e = md.fx;
+    fx.spawnMul   *= e.spawnMul   ?? 1;
+    fx.patMul     *= e.patMul     ?? 1;
+    fx.fareMul    *= e.fareMul    ?? 1;
+    fx.vipMul     *= e.vipMul     ?? 1;
+    fx.capDelta   += e.capDelta   ?? 0;
+    fx.coast       = Math.max(fx.coast, e.coast ?? 0);
+    fx.spiderMul  *= e.spiderMul  ?? 1;
+    fx.dark        = Math.max(fx.dark, e.dark ?? 0);
+    fx.destHigh    = fx.destHigh || !!e.destHigh;
+    fx.moverMul   *= e.moverMul   ?? 1;
+    fx.nervousMul *= e.nervousMul ?? 1;
+    fx.tipperMul  *= e.tipperMul  ?? 1;
+    fx.forceSpider = fx.forceSpider || !!e.forceSpider;
+  }
+  return fx;
+}
+// Shift 1 is clean (onboarding); 1 condition early; up to 2 once you're rolling.
+function rollModifiers(n) {
+  if (n <= 1) return [];
+  const count = n >= 5 && Math.random() < 0.5 ? 2 : 1;
+  const avoid = run.seenModifiers.slice(-3);
+  const pool = MODIFIERS.filter(m => !avoid.includes(m.key));
+  const picks = shuffle(pool).slice(0, count);
+  run.seenModifiers.push(...picks.map(m => m.key));
+  return picks;
+}
 
 // ──────────────────────────────────────────────────────── career / run
 
@@ -138,6 +208,8 @@ function newRun() {
     shiftNum: 0,
     totalDelivered: 0,
     fuses: 0,          // consumable: each forgives one walk-off
+    building: generateBuilding(),   // this career's landmark layout
+    seenModifiers: [],              // for variety: avoid repeating conditions back-to-back
   };
 }
 
@@ -160,7 +232,7 @@ function mods() {
 
 // Shift parameters scale with shift number.
 function shiftParams(n) {
-  const floors = Math.min(FLOOR_POOL.length, 5 + Math.floor(n / 2)); // 5 → 12
+  const floors = Math.min(MAX_FLOORS, 5 + Math.floor(n / 2)); // 5 → 12
   const quota  = 5 + n * 2;
   const spawn  = Math.max(2.0, 5.0 - n * 0.35);   // seconds between arrivals
   const patMul = Math.max(0.6, 1 - n * 0.05);     // patience squeeze
@@ -171,8 +243,12 @@ function startShift() {
   menu = null;
   run.shiftNum++;
   const sp = shiftParams(run.shiftNum);
-  const active = FLOOR_POOL.slice(0, sp.floors);
+  const active = [];
+  for (let i = 0; i < sp.floors; i++) active.push({ label: FLOOR_LABELS[i], acc: run.building[i] });
+  const modifiers = rollModifiers(run.shiftNum);
+  const fx = combineFx(modifiers);
   const m = mods();
+  const introT = modifiers.length ? 3.0 : 1.6;
   game = {
     state: 'PLAYING',
     t: 0,
@@ -180,9 +256,9 @@ function startShift() {
     elev: { y: 0, v: 0, doors: 1, doorTarget: 1, jamFlash: 0, wasReady: false },
     passengers: [],
     nextId: 1,
-    spawnTimer: 1.2,
-    spawnInterval: sp.spawn,
-    patMul: sp.patMul,
+    spawnTimer: introT + 0.3,         // hold the first arrival until the intro clears
+    spawnInterval: sp.spawn * fx.spawnMul,
+    patMul: sp.patMul * fx.patMul,
     quota: sp.quota,
     delivered: 0,
     partsThisShift: 0,
@@ -191,14 +267,22 @@ function startShift() {
     flash: null,
     shiftTime: 0,
     banner: null,
+    introT,
+    modifiers,
+    fx,
+    particles: [],
+    floaters: [],
     power: { express: 0, freeze: 0, xray: 0, magnet: 0, double: 0 },
     // the legendary Spider Floor opens below the lobby for a brief window
     spider: { open: false, used: false,
-              cooldown: (9 + Math.random() * 9) * (1 - 0.25 * save.meta.knownAssociate), window: 0, glow: 0 },
+              cooldown: (9 + Math.random() * 9) * (1 - 0.25 * save.meta.knownAssociate) * fx.spiderMul,
+              window: 0, glow: 0 },
     spiderGame: null,
     m,
   };
 }
+
+function capacityNow() { return Math.max(1, game.m.capacity + game.fx.capDelta); }
 
 const SPIDER_Y = -CFG.floorHeight;   // one floor below the lobby
 
@@ -340,15 +424,71 @@ function doorsOpen() { return game.elev.doors > 0.92; }
 function flash(color, t = 0.25) { game.flash = { color, t, max: t }; }
 function shake(amt) { game.shake = Math.max(game.shake, amt); }
 function ridersAboard() { return game.passengers.filter(p => p.state === 'riding').length; }
+function slotsAboard() {
+  let s = 0;
+  for (const p of game.passengers) if (p.state === 'riding') s += p.size || 1;
+  return s;
+}
+
+// ── juice: particle bursts + floating text (screen space) ──
+function cabinScreen() { return { x: (SHAFT_LEFT + SHAFT_RIGHT) / 2, y: CENTER_Y }; }
+function burst(e, color, n = 12) {
+  const c = cabinScreen();
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, sp = 40 + Math.random() * 130;
+    game.particles.push({ x: c.x + (Math.random() - 0.5) * 50, y: c.y + (Math.random() - 0.5) * 36,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 50, life: 0, max: 0.5 + Math.random() * 0.45,
+      color, size: 2 + Math.random() * 2.5 });
+  }
+}
+function floatText(text, color) {
+  const c = cabinScreen();
+  game.floaters.push({ x: c.x + (Math.random() - 0.5) * 24, y: c.y - 44, vy: -48, life: 0, max: 1.2, text, color });
+}
+function updateFx(dt) {
+  if (game.particles) {
+    for (const p of game.particles) { p.life += dt; p.vy += 250 * dt; p.x += p.vx * dt; p.y += p.vy * dt; }
+    game.particles = game.particles.filter(p => p.life < p.max);
+  }
+  if (game.floaters) {
+    for (const f of game.floaters) { f.life += dt; f.y += f.vy * dt; f.vy *= Math.pow(0.5, dt * 60); }
+    game.floaters = game.floaters.filter(f => f.life < f.max);
+  }
+}
 
 function spawnPassenger() {
-  const dests = [];
-  for (let i = 1; i <= activeMaxIdx(); i++) dests.push(i);
-  const dest = dests[Math.floor(Math.random() * dests.length)];
-  const pat = game.m.patience * game.patMul;
+  const fx = game.fx;
+  // destination: uniform, or biased to the upper floors under "EVERYONE UP"
+  const top = activeMaxIdx();
+  let dest;
+  if (fx.destHigh && top >= 2) {
+    const lo = Math.max(1, Math.ceil(top * 0.55));
+    dest = lo + Math.floor(Math.random() * (top - lo + 1));
+  } else {
+    dest = 1 + Math.floor(Math.random() * top);
+  }
+
+  // pick a kind by weight (modifiers tilt the odds)
+  const rep = 1 + 0.6 * save.meta.reputation;
+  const weights = {
+    normal:  10,
+    vip:     2.6 * rep * fx.vipMul,
+    nervous: 1.4 * fx.nervousMul,
+    tipper:  1.2 * fx.tipperMul,
+    mover:   1.0 * fx.moverMul,
+  };
+  let total = 0; for (const k in weights) total += weights[k];
+  let r = Math.random() * total, kind = 'normal';
+  for (const k in weights) { r -= weights[k]; if (r <= 0) { kind = k; break; } }
+
+  let pat = game.m.patience * game.patMul;
+  if (kind === 'nervous') pat *= 0.6;
   game.passengers.push({
     id: game.nextId++,
     dest,
+    kind,
+    vip: kind === 'vip',
+    size: kind === 'mover' ? 2 : 1,    // movers hog two cabin slots
     state: 'waiting',
     patience: pat,
     patienceMax: pat,
@@ -357,7 +497,6 @@ function spawnPassenger() {
     skin: Math.floor(Math.random() * 4),
     coat: Math.floor(Math.random() * 5),
     hat: Math.random() < 0.4 ? Math.floor(Math.random() * 3) : -1,
-    vip: Math.random() < 0.16 * (1 + 0.6 * save.meta.reputation),   // golden riders tip a power-up
     x: 0, tx: 0,         // smoothed screen x for shuffling in line
   });
 }
@@ -370,11 +509,13 @@ function update(dt) {
   if (game && game.elev) game.elev.jamFlash = Math.max(0, game.elev.jamFlash - dt);
   if (game && game.banner) { game.banner.t -= dt; if (game.banner.t <= 0) game.banner = null; }
   if (game && (game.state === 'SHIFT_DONE' || game.state === 'FIRED')) game.doneT += dt;
+  if (game) updateFx(dt);   // particles / floating text decay in every state
 
   if (game && game.state === 'SPIDER') { updateSpider(dt); return; }
   if (!game || game.state !== 'PLAYING') return;
   game.t += dt;
   game.shiftTime += dt;
+  if (game.introT > 0) game.introT = Math.max(0, game.introT - dt);
   const e = game.elev;
   const m = game.m;
 
@@ -383,7 +524,7 @@ function update(dt) {
   if (sp.glow > 0 && !sp.open) sp.glow = Math.max(0, sp.glow - dt);
   if (!sp.open && !sp.used) {
     sp.cooldown -= dt;
-    if (sp.cooldown <= 0 && run.shiftNum >= 2 && game.delivered < game.quota - 1) {
+    if (sp.cooldown <= 0 && (run.shiftNum >= 2 || game.fx.forceSpider) && game.delivered < game.quota - 1) {
       sp.open = true; sp.window = 13;
       game.banner = { text: '▓ THE SPIDER FLOOR IS OPEN — CRANK BELOW THE LOBBY ▓', t: 2.4, color: '#b46adc' };
       sfx.spider();
@@ -415,8 +556,9 @@ function update(dt) {
     e.v += input * (braking ? m.brakeAccel : accelE) * dt;
   } else {
     // no input: a heavy flywheel. Barely any drag, so momentum carries you —
-    // letting go does NOT stop you. Only a crawl gets a little settling help.
-    e.v *= Math.pow(CFG.coastFriction, dt * 60);
+    // letting go does NOT stop you. "SLIPPERY CABLES" makes it glide even more.
+    const coastF = CFG.coastFriction + (0.9994 - CFG.coastFriction) * game.fx.coast;
+    e.v *= Math.pow(coastF, dt * 60);
     if (Math.abs(e.v) < CFG.settleBelow) e.v *= Math.pow(CFG.settleFriction, dt * 60);
     if (Math.abs(e.v) < 0.6) e.v = 0;
   }
@@ -467,13 +609,13 @@ function update(dt) {
   const ci = nearestFloorIdx(e.y);
   const aligned = isAligned();
   const open = doorsOpen();
-  const cap = m.capacity;
+  const cap = capacityNow();
 
-  // board: at lobby, aligned, open, with room — FIFO by arrival
+  // board: at lobby, aligned, open, with room — FIFO by arrival (movers take 2 slots)
   if (ci === 0 && aligned && open) {
     const waiting = game.passengers.filter(p => p.state === 'waiting');
     for (const p of waiting) {
-      if (ridersAboard() >= cap) break;
+      if (slotsAboard() + p.size > cap) continue;   // won't fit — skip, try the next
       p.state = 'riding';
       p.reveal = CFG.rememberTime;
       sfx.board();
@@ -493,10 +635,15 @@ function update(dt) {
         p.removeAt = game.t + 0.45;
         game.delivered++;
         run.totalDelivered++;
-        const fare = (game.power.double > 0 ? 2 : 1) + save.meta.frequentFlyer;
+        let fare = Math.round(((game.power.double > 0 ? 2 : 1) + save.meta.frequentFlyer) * game.fx.fareMul);
+        if (p.kind === 'tipper') fare += 2;            // big tippers pad the fare
+        fare = Math.max(1, fare);
         run.parts += fare;
         game.partsThisShift += fare;
-        flash(p.vip ? '#ffd44a' : '#7aaa55', 0.18);
+        const col = p.vip ? '#ffd44a' : p.kind === 'tipper' ? '#7affc0' : '#7aaa55';
+        flash(col, 0.18);
+        burst(e, col);                                  // particle pop at the cabin
+        floatText(`+${fare} ◆`, col);
         sfx.chime();
         if (p.vip) grantPower();   // VIPs tip a temporary boon
       } else if (p.patience <= 0) {
@@ -520,6 +667,7 @@ function losePassenger(p) {
     run.fuses--;
     flash('#d4a050', 0.3);
     shake(4);
+    floatText('FUSE BLOWN', '#d4a050');
     sfx.buzz();
     game.banner = { text: 'WALK-OFF — SPARE FUSE BLOWN', t: 1.4, color: '#d4a050' };
     return;
@@ -527,6 +675,8 @@ function losePassenger(p) {
   game.strikes++;
   flash('#aa3a32');
   shake(7);
+  floatText('WALK-OFF', '#e0584a');
+  burst(game.elev, '#aa3a32', 8);
   sfx.buzz();
   game.banner = { text: 'PASSENGER WALKED OFF', t: 1.2, color: '#aa3a32' };
 }
@@ -655,7 +805,10 @@ function render() {
   else {
     drawBuilding();
     drawCar();
+    drawDarkness();          // POWER FLICKER / GRAVEYARD shadow over the shaft
+    drawFx();                // particles + floating text
     drawHUD();
+    drawVignette();
     if (game.flash) {
       ctx.fillStyle = game.flash.color;
       ctx.globalAlpha = (game.flash.t / game.flash.max) * 0.5;
@@ -663,8 +816,81 @@ function render() {
       ctx.globalAlpha = 1;
     }
     if (game.banner) drawBanner();
+    if (game.introT > 0 && st === 'PLAYING') drawIntro();
     if (st === 'SHIFT_DONE') drawShiftDone();
     if (st === 'FIRED') drawFired();
+  }
+  ctx.restore();
+}
+
+// soft darkened edges for depth/mood
+function drawVignette() {
+  const g = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.8);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.38)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+
+// "POWER FLICKER" / "GRAVEYARD SHIFT" — the floors drop into shadow, on a flicker
+function drawDarkness() {
+  const d = game.fx.dark;
+  if (d <= 0) return;
+  const flicker = 0.78 + 0.22 * Math.sin(game.t * 13) * Math.sin(game.t * 4.3);
+  ctx.fillStyle = `rgba(2,1,4,${d * flicker})`;
+  ctx.fillRect(ROOM_LEFT, 0, W - ROOM_LEFT, H);
+  // the cabin keeps a small pool of light around it
+  const c = cabinScreen();
+  const g = ctx.createRadialGradient(c.x, c.y, 20, c.x, c.y, 260);
+  g.addColorStop(0, `rgba(255,225,160,${0.10 * d})`);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+
+function drawFx() {
+  for (const p of game.particles) {
+    ctx.globalAlpha = Math.max(0, 1 - p.life / p.max);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+  for (const f of game.floaters) {
+    const k = f.life / f.max;
+    ctx.globalAlpha = Math.max(0, 1 - k);
+    ctx.fillStyle = f.color;
+    ctx.font = `bold ${15 + (1 - k) * 5}px ui-monospace`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(f.text, f.x, f.y);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// the shift-start card: SHIFT N + any rolled conditions
+function drawIntro() {
+  const t = game.introT;
+  const a = Math.min(1, t) * Math.min(1, (3.0 - t) * 2 + 0.4);
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, a));
+  ctx.fillStyle = 'rgba(10,8,6,0.82)';
+  ctx.fillRect(0, H / 2 - 120, W, 240);
+  ctx.fillStyle = '#bfa45f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = 'bold 44px ui-monospace';
+  ctx.fillText(`SHIFT ${run.shiftNum}`, W / 2, H / 2 - 58);
+  ctx.font = '14px ui-monospace'; ctx.fillStyle = '#7a6a4a';
+  ctx.fillText(`deliver ${game.quota} before three walk-offs`, W / 2, H / 2 - 24);
+
+  if (game.modifiers.length === 0) {
+    ctx.fillStyle = '#6a7a5a'; ctx.font = 'italic 15px ui-monospace';
+    ctx.fillText('a calm, ordinary day', W / 2, H / 2 + 16);
+  } else {
+    let yy = H / 2 + 8;
+    for (const md of game.modifiers) {
+      const col = md.tone === 'good' ? '#7acf7a' : md.tone === 'bad' ? '#e0584a' : '#d8b24a';
+      ctx.fillStyle = col; ctx.font = 'bold 19px ui-monospace';
+      ctx.fillText(`◇ ${md.name} ◇`, W / 2, yy);
+      ctx.fillStyle = '#9a8a6a'; ctx.font = '12px ui-monospace';
+      ctx.fillText(md.desc, W / 2, yy + 18);
+      yy += 46;
+    }
   }
   ctx.restore();
 }
@@ -856,6 +1082,46 @@ function drawLandmark(f, x, y) {
       ctx.beginPath(); ctx.moveTo(x - 20, y + 26); ctx.lineTo(x + 80, y + 26); ctx.stroke();
       for (let i = -2; i <= 2; i++) { ctx.fillStyle = '#d4a050'; ctx.beginPath(); ctx.arc(x + 30 + i * 12, y - 36, 2, 0, 7); ctx.fill(); }
       break;
+    case 'mirror':
+      ctx.fillStyle = '#9ab0b8'; ctx.fillRect(x + 6, y - 44, 44, 88);
+      ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      ctx.beginPath(); ctx.moveTo(x + 10, y - 40); ctx.lineTo(x + 30, y - 40); ctx.lineTo(x + 10, y + 8); ctx.fill();
+      ctx.strokeStyle = '#3a2a1c'; ctx.lineWidth = 3; ctx.strokeRect(x + 6, y - 44, 44, 88);
+      break;
+    case 'neon':
+      ctx.fillStyle = '#ff5aa0'; ctx.font = 'bold 22px ui-monospace'; ctx.textAlign = 'center';
+      ctx.shadowColor = '#ff5aa0'; ctx.shadowBlur = 12;
+      ctx.fillText('OPEN', x + 30, y - 4); ctx.shadowBlur = 0;
+      ctx.strokeStyle = '#ff5aa0'; ctx.lineWidth = 2;
+      ctx.strokeRect(x + 4, y - 22, 56, 36);
+      break;
+    case 'pipes':
+      ctx.strokeStyle = '#6a7a4a'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x + 8, y - 46); ctx.lineTo(x + 8, y + 10); ctx.lineTo(x + 40, y + 10); ctx.lineTo(x + 40, y + 46);
+      ctx.moveTo(x + 24, y - 46); ctx.lineTo(x + 24, y - 12); ctx.lineTo(x + 52, y - 12);
+      ctx.stroke();
+      ctx.fillStyle = '#8a9a5a'; ctx.beginPath(); ctx.arc(x + 8, y + 10, 5, 0, 7); ctx.fill();
+      break;
+    case 'cat':
+      ctx.fillStyle = '#3a3030'; // a cat curled on the floor
+      ctx.beginPath(); ctx.ellipse(x + 28, y + 30, 20, 11, 0, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(x + 12, y + 26, 8, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(x + 7, y + 20); ctx.lineTo(x + 9, y + 14); ctx.lineTo(x + 13, y + 20);
+      ctx.moveTo(x + 13, y + 20); ctx.lineTo(x + 16, y + 14); ctx.lineTo(x + 19, y + 20); ctx.fill();
+      ctx.strokeStyle = '#3a3030'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(x + 46, y + 30); ctx.quadraticCurveTo(x + 58, y + 24, x + 52, y + 14); ctx.stroke();
+      ctx.fillStyle = '#9aca6a'; ctx.beginPath(); ctx.arc(x + 10, y + 25, 1.4, 0, 7); ctx.arc(x + 15, y + 25, 1.4, 0, 7); ctx.fill();
+      break;
+    case 'aquarium':
+      ctx.fillStyle = '#14506a'; ctx.fillRect(x + 4, y - 30, 56, 60);
+      ctx.fillStyle = 'rgba(120,200,220,0.25)'; ctx.fillRect(x + 4, y - 30, 56, 18);
+      ctx.strokeStyle = '#2a2018'; ctx.lineWidth = 3; ctx.strokeRect(x + 4, y - 30, 56, 60);
+      ctx.fillStyle = '#ffa040'; // fish
+      ctx.beginPath(); ctx.ellipse(x + 28, y, 6, 4, 0, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(x + 34, y); ctx.lineTo(x + 40, y - 4); ctx.lineTo(x + 40, y + 4); ctx.fill();
+      ctx.fillStyle = '#3a7a4a'; ctx.fillRect(x + 14, y + 6, 4, 22); ctx.fillRect(x + 46, y + 2, 4, 26);
+      break;
   }
   ctx.restore();
 }
@@ -885,14 +1151,22 @@ function drawCar() {
   const m = game.m;
 
   // riders stand inside the cutaway cabin (drawn first; the doors frost over
-  // them when shut, which is exactly what makes their floor-tags hard to read)
+  // them when shut, which is exactly what makes their floor-tags hard to read).
+  // Spacing is slot-based so a mover (2 slots) gets room for its luggage.
   const riders = game.passengers.filter(p => p.state === 'riding');
-  const slots = Math.max(riders.length, m.capacity);   // even spacing for the whole cabin
+  const cap = capacityNow();
+  const usedSlots = riders.reduce((s, p) => s + (p.size || 1), 0);
+  const slots = Math.max(usedSlots, cap);
   const stepX = (w - 52) / Math.max(1, slots);
-  riders.forEach((p, i) => drawPassenger(p, left + 26 + (i + 0.5) * stepX, top + h - 10, 'riding'));
+  let slot = 0;
+  for (const p of riders) {
+    const sz = p.size || 1;
+    drawPassenger(p, left + 26 + (slot + sz / 2) * stepX, top + h - 10, 'riding');
+    slot += sz;
+  }
 
   // CABIN FULL flag — so it's obvious why the lobby keeps piling up
-  if (riders.length >= m.capacity) {
+  if (usedSlots >= cap) {
     const waiting = game.passengers.some(s => s.state === 'waiting');
     if (waiting && nearestFloorIdx(game.elev.y) === 0) {
       ctx.fillStyle = `rgba(170,58,50,${0.55 + 0.25 * Math.sin(game.t * 6)})`;
@@ -939,13 +1213,23 @@ function drawCar() {
 }
 
 function drawPassenger(p, x, footY, mode) {
-  // panic jitter as patience runs out — you feel the urgency before the bar dies
+  // panic jitter as patience runs out — you feel the urgency before the bar dies.
+  // the nervous type trembles a little the whole time.
   const pfrac = p.patience / p.patienceMax;
   if (pfrac < 0.28) x += (Math.random() - 0.5) * (0.28 - pfrac) * 26;
+  if (p.kind === 'nervous') x += (Math.random() - 0.5) * 1.6;
   const bob = Math.sin(p.bob) * 1.5;
   const fy = footY + bob;
   const skin = ['#d4a878', '#a87850', '#7a5838', '#5a3820'][p.skin];
-  const coat = p.vip ? '#caa33a' : ['#3a5a78', '#5a3a4a', '#3a4a3a', '#5a4530', '#604070'][p.coat];
+  const coatByKind = { vip: '#caa33a', tipper: '#3a8a5a', mover: '#7a5a36', nervous: '#5a6a82' };
+  const coat = coatByKind[p.kind] || ['#3a5a78', '#5a3a4a', '#3a4a3a', '#5a4530', '#604070'][p.coat];
+
+  // a mover hauls a suitcase
+  if (p.kind === 'mover') {
+    ctx.fillStyle = '#4a3420'; ctx.fillRect(x + 8, fy - 22, 14, 18);
+    ctx.strokeStyle = '#6a4a2a'; ctx.lineWidth = 1; ctx.strokeRect(x + 8.5, fy - 21.5, 13, 17);
+    ctx.fillStyle = '#2a1c10'; ctx.fillRect(x + 12, fy - 26, 6, 4);
+  }
 
   ctx.fillStyle = '#1a1410';
   ctx.fillRect(x - 6, fy - 12, 5, 12);
@@ -954,6 +1238,24 @@ function drawPassenger(p, x, footY, mode) {
   ctx.fillRect(x - 9, fy - 30, 18, 20);
   ctx.fillStyle = skin;
   ctx.beginPath(); ctx.arc(x, fy - 37, 7, 0, 7); ctx.fill();
+
+  // a little face that emotes with patience: smile → worried → grimace
+  ctx.fillStyle = '#1a1209';
+  ctx.beginPath(); ctx.arc(x - 2.6, fy - 38, 1.1, 0, 7); ctx.arc(x + 2.6, fy - 38, 1.1, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#1a1209'; ctx.lineWidth = 1; ctx.beginPath();
+  if (pfrac > 0.55)      ctx.arc(x, fy - 35, 2.4, 0.15 * Math.PI, 0.85 * Math.PI);          // smile
+  else if (pfrac > 0.28) { ctx.moveTo(x - 2.4, fy - 33.5); ctx.lineTo(x + 2.4, fy - 33.5); } // flat
+  else                   ctx.arc(x, fy - 31.5, 2.4, 1.15 * Math.PI, 1.85 * Math.PI);        // frown
+  ctx.stroke();
+
+  if (p.kind === 'nervous') {                 // sweat bead
+    ctx.fillStyle = 'rgba(150,200,230,0.8)';
+    ctx.beginPath(); ctx.arc(x + 7, fy - 39 + (p.bob % 1) * 3, 1.6, 0, 7); ctx.fill();
+  }
+  if (p.kind === 'tipper') {                  // flashing a coin
+    ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 9px ui-monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('◆', x + 11, fy - 20);
+  }
   if (p.vip) {
     // little gold crown so you know who's worth chasing
     ctx.fillStyle = '#ffd44a';
@@ -961,7 +1263,7 @@ function drawPassenger(p, x, footY, mode) {
     ctx.moveTo(x - 7, fy - 44); ctx.lineTo(x - 7, fy - 50); ctx.lineTo(x - 3, fy - 46);
     ctx.lineTo(x, fy - 51); ctx.lineTo(x + 3, fy - 46); ctx.lineTo(x + 7, fy - 50);
     ctx.lineTo(x + 7, fy - 44); ctx.closePath(); ctx.fill();
-  } else if (p.hat >= 0) {
+  } else if (p.hat >= 0 && p.kind !== 'mover' && p.kind !== 'tipper' && p.kind !== 'nervous') {
     ctx.fillStyle = ['#1a1410', '#882018', '#bfa45f'][p.hat];
     ctx.fillRect(x - 8, fy - 44, 16, 3);
     ctx.fillRect(x - 5, fy - 49, 10, 6);
@@ -1039,10 +1341,11 @@ function drawHUD() {
   else if (doorsOpen()) t = 'DOORS OPEN';
   else if (game.elev.doors > 0) t = 'MOVING…';
   else t = 'DOORS SHUT';
-  const full = ridersAboard() >= game.m.capacity;
+  const cap = capacityNow();
+  const full = slotsAboard() >= cap;
   ctx.fillStyle = c; ctx.fillText(t, W - 14, H - 15);
   ctx.fillStyle = full ? '#aa3a32' : '#7a6a4a';
-  ctx.textAlign = 'left'; ctx.fillText(`${ridersAboard()}/${game.m.capacity}`, W - 218, H - 15);
+  ctx.textAlign = 'left'; ctx.fillText(`${slotsAboard()}/${cap}`, W - 218, H - 15);
 
   // active power-up chips, just under the top bar
   const active = Object.keys(game.power).filter(k => game.power[k] > 0);
@@ -1058,6 +1361,18 @@ function drawHUD() {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(pw.name, chipX + 54, 53);
     chipX += 116;
+  }
+
+  // active shift conditions — small tags top-left, so you remember what's in play
+  let my = 46;
+  for (const md of game.modifiers) {
+    const col = md.tone === 'good' ? '#7acf7a' : md.tone === 'bad' ? '#e0584a' : '#d8b24a';
+    ctx.font = 'bold 11px ui-monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    const wlab = ctx.measureText(md.name).width + 16;
+    ctx.fillStyle = 'rgba(13,10,8,0.8)'; ctx.fillRect(12, my - 9, wlab, 18);
+    ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.strokeRect(12.5, my - 8.5, wlab - 1, 17);
+    ctx.fillStyle = col; ctx.fillText(md.name, 20, my);
+    my += 22;
   }
   ctx.restore();
 }
