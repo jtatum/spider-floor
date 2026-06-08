@@ -1,4 +1,4 @@
-# The Worst Elevator
+# The Spider Floor
 
 An elevator roguelike. You're the new operator of the worst lift in the tallest
 building in town — **no floor display, no dispatch screen**, just a cranky manual
@@ -6,6 +6,9 @@ crank and your own memory. Scoop passengers from the lobby, remember the floors
 they shouted, and deliver each one before they lose patience. Survive a shift,
 earn parts, and rebuild the death-trap into a dream machine — where every upgrade
 is the sweet relief of not having to do the hard part anymore.
+
+…and everyone in the building has heard about the **Spider Floor**, somewhere
+below the lobby. Brave enough to step off and find out?
 
 ## Play
 

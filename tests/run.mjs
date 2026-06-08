@@ -178,17 +178,16 @@ test('Spider Floor: getting overwhelmed costs a strike and banks nothing', (G) =
 
 // ── cross-run meta-progression ───────────────────────────────────────────────
 
-test('firing earns ★ stars, persists, and updates the best record', (G) => {
+test('firing records the run, updates best, and persists', (G) => {
   G.run = G.newRun(); G.startShift();
   G.run.shiftNum = 4; G.run.totalDelivered = 30;
   G.endShift('fired');
-  assert.equal(G.game.starsEarned, 13, 'survived 3*2 + floor(30/4)=13');
-  assert.equal(G.save.stars, 13);
-  assert.equal(G.save.best.shifts, 3);
+  assert.equal(G.game.state, 'FIRED');
+  assert.equal(G.save.stats.fires, 1, 'a firing is recorded');
+  assert.equal(G.save.best.shifts, 3, 'survived 3 full shifts');
   assert.equal(G.save.best.delivered, 30);
-  // round-trips through localStorage
   const reloaded = G.loadSave();
-  assert.equal(reloaded.stars, 13, 'persisted to storage');
+  assert.equal(reloaded.best.shifts, 3, 'persisted to storage');
 });
 
 test('Workshop perks apply to the next run', (G) => {
@@ -212,15 +211,17 @@ test('Master Key installs one random upgrade each run; Sturdy Cables fits a damp
   assert.ok(total >= 2, 'damper + a master-key upgrade are installed');
 });
 
-test('Hazard Pay multiplies star earnings', (G) => {
-  G.save.meta.hazardPay = 2;       // +50%
-  G.run = G.newRun(); G.startShift();
-  G.run.shiftNum = 4; G.run.totalDelivered = 40;   // base = 3*2 + 10 = 16
-  G.endShift('fired');
-  assert.equal(G.game.starsEarned, Math.floor(16 * 1.5), 'earned 24 with +50%');
+test('Hazard Pay multiplies achievement payouts', (G) => {
+  G.save.meta.hazardPay = 2;          // +50% to achievement awards
+  const before = G.save.stars;
+  G.save.stats.shifts = 1;            // only "Day One" (award 4) becomes true
+  G.checkAchievements();
+  assert.ok(G.save.ach.dayOne, 'Day One unlocked');
+  assert.equal(G.save.stars - before, 6, '4 ★ ×1.5 = 6');
 });
 
 test('Workshop: a perk caps at max and refuses when you cannot afford it', (G) => {
+  G.save.ach.firstPerk = true; G.save.ach.perks5 = true;   // avoid bonus ★ from buying
   const m = G.META.find(x => x.key === 'unionCard'); // max 1, cost 9
   G.save.stars = 5; buyMeta(G, 'unionCard');
   assert.equal(G.save.meta.unionCard, 0, 'too poor to buy');
@@ -367,6 +368,36 @@ test('a full career plays many shifts through the live loop without breaking', (
   }
   assert.ok(G.run.shiftNum >= 2, `played multiple shifts (reached ${G.run.shiftNum})`);
   assert.ok(G.run.totalDelivered > 0, 'delivered passengers across the career');
+});
+
+test('achievements can fund the entire Workshop', (G) => {
+  const totalPerkCost = G.META.reduce((sum, m) => sum + m.costs.reduce((a, b) => a + b, 0), 0);
+  assert.ok(G.ACH_TOTAL >= totalPerkCost,
+    `total achievement ★ (${G.ACH_TOTAL}) must cover all perks (${totalPerkCost})`);
+});
+
+test('★ comes only from achievements (none earned at a clean start)', (G) => {
+  assert.equal(G.save.stars, 0, 'fresh profile has no stars');
+  assert.equal(G.save.stats.deliveries, 0);
+});
+
+test('delivering unlocks "First Fare" and awards its ★', (G) => {
+  G.run = G.newRun(); G.startShift();
+  assert.ok(G.save.ach.clockIn, 'starting a run unlocks Clock In');
+  const before = G.save.stars;
+  G.game.passengers = []; addRider(G, 2, 'normal');
+  openDoorsAt(G, 2); G.step(3);
+  assert.ok(G.save.ach.firstFare, 'First Fare unlocked on first delivery');
+  assert.ok(G.save.stars > before, 'the achievement paid ★');
+});
+
+test('a spotless shift unlocks "Spotless"', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.game.delivered = G.game.quota - 1;
+  G.game.passengers = []; addRider(G, 2, 'normal');
+  openDoorsAt(G, 2); G.step(3);
+  assert.equal(G.game.state, 'SHIFT_DONE');
+  assert.ok(G.save.ach.perfect, 'no walk-offs → Spotless');
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

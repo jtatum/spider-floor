@@ -241,34 +241,105 @@ const META = [
   { key: 'rerollToken',   name: 'Haggler',          max: 2, costs: [6, 9],
     blurb: ['Begin each shop visit with 1 free reroll.', 'Begin each visit with 2 free rerolls.'] },
   { key: 'hazardPay',     name: 'Hazard Pay',       max: 2, costs: [7, 11],
-    blurb: ['Earn 25% more ★ per run.', 'Earn 50% more ★ per run.'] },
+    blurb: ['Achievement payouts are 25% bigger.', 'Achievement payouts are 50% bigger.'] },
   { key: 'reputation',    name: 'Reputation',       max: 2, costs: [4, 7],
     blurb: ['VIP passengers turn up more often.', 'VIPs turn up much more often.'] },
   { key: 'knownAssociate',name: 'Known Associate',  max: 2, costs: [5, 8],
     blurb: ['The Spider Floor opens more often.', '…and its web pays out faster.'] },
 ];
 
+// Achievements are the ONLY source of ★ stars (spent in the Workshop). Total
+// awards exceed the total cost of every perk, so a dedicated player can unlock
+// the whole Workshop. `test(s)` reads lifetime `save.stats`.
+const ACHIEVEMENTS = [
+  { key: 'clockIn',   name: 'Clock In',                  desc: 'Start your first shift.',                  award: 3,  test: s => s.runs >= 1 },
+  { key: 'firstFare', name: 'First Fare',                desc: 'Deliver a passenger.',                     award: 3,  test: s => s.deliveries >= 1 },
+  { key: 'dayOne',    name: 'Day One',                   desc: 'Survive a whole shift.',                   award: 4,  test: s => s.shifts >= 1 },
+  { key: 'fired',     name: "You're Fired",              desc: 'Get fired. It happens.',                   award: 3,  test: s => s.fires >= 1 },
+  { key: 'deliver50', name: 'Regular Service',           desc: 'Deliver 50 passengers (lifetime).',        award: 6,  test: s => s.deliveries >= 50 },
+  { key: 'deliver250',name: 'Veteran Operator',          desc: 'Deliver 250 passengers (lifetime).',       award: 10, test: s => s.deliveries >= 250 },
+  { key: 'deliver1k', name: 'Career Operator',           desc: 'Deliver 1000 passengers (lifetime).',      award: 16, test: s => s.deliveries >= 1000 },
+  { key: 'shift3',    name: 'Getting the Hang of It',    desc: 'Reach shift 3.',                           award: 5,  test: s => s.maxShift >= 3 },
+  { key: 'shift6',    name: 'Seasoned',                  desc: 'Reach shift 6.',                           award: 8,  test: s => s.maxShift >= 6 },
+  { key: 'shift10',   name: 'Elevator Whisperer',        desc: 'Reach shift 10.',                          award: 14, test: s => s.maxShift >= 10 },
+  { key: 'shift15',   name: 'Untouchable',               desc: 'Reach shift 15.',                          award: 20, test: s => s.maxShift >= 15 },
+  { key: 'busy',      name: 'Rush Hour Hero',            desc: 'Deliver 12 in a single shift.',            award: 8,  test: s => s.bestShiftDeliveries >= 12 },
+  { key: 'perfect',   name: 'Spotless',                  desc: 'Finish a shift with no walk-offs.',        award: 6,  test: s => s.perfectShifts >= 1 },
+  { key: 'perfect5',  name: 'Consummate Professional',   desc: 'Finish 5 spotless shifts.',                award: 12, test: s => s.perfectShifts >= 5 },
+  { key: 'rich',      name: 'Deep Pockets',              desc: 'Hold ◆30 at once.',                        award: 7,  test: s => s.bestRunParts >= 30 },
+  { key: 'maxOut',    name: 'Dream Machine',             desc: 'Max out an upgrade.',                      award: 6,  test: s => s.everMaxed >= 1 },
+  { key: 'maxOut3',   name: 'Fully Loaded',              desc: 'Max 3 upgrades in one run.',               award: 12, test: s => s.bestMaxedRun >= 3 },
+  { key: 'vip5',      name: 'Friends in High Places',    desc: 'Deliver 5 VIPs.',                          award: 6,  test: s => s.vips >= 5 },
+  { key: 'mover10',   name: 'Heavy Lifting',             desc: 'Deliver 10 movers.',                       award: 6,  test: s => s.movers >= 10 },
+  { key: 'tipper10',  name: 'Generous Sort',             desc: 'Deliver 10 tippers.',                      award: 6,  test: s => s.tippers >= 10 },
+  { key: 'power10',   name: 'Charged Up',                desc: 'Collect 10 power-ups.',                    award: 7,  test: s => s.powerups >= 10 },
+  { key: 'brave',     name: 'Into the Web',              desc: 'Step onto the Spider Floor.',              award: 4,  test: s => s.spiderVisits >= 1 },
+  { key: 'slay10',    name: 'Exterminator',              desc: 'Slay 10 spiders (lifetime).',              award: 6,  test: s => s.spiders >= 10 },
+  { key: 'slay100',   name: "Arachnophobe's Revenge",    desc: 'Slay 100 spiders (lifetime).',             award: 14, test: s => s.spiders >= 100 },
+  { key: 'haul',      name: 'Spoils of War',             desc: 'Carry ◆15 out of one Spider Floor visit.', award: 9,  test: s => s.bestSpiderLoot >= 15 },
+  { key: 'flawless',  name: 'Not a Scratch',             desc: 'Clear a Spider Floor visit unhurt (3+ kills).', award: 10, test: s => s.noHitClears >= 1 },
+  { key: 'firstPerk', name: 'Home Improvement',          desc: 'Buy a permanent Workshop perk.',           award: 4,  test: s => s.perks >= 1 },
+  { key: 'perks5',    name: 'Renovator',                 desc: 'Own 5 perk levels.',                       award: 8,  test: s => s.perks >= 5 },
+  { key: 'perks12',   name: 'Master of the House',       desc: 'Own 12 perk levels.',                      award: 14, test: s => s.perks >= 12 },
+  { key: 'twoMod',    name: 'Bad Day at Work',           desc: 'Work a shift under two conditions.',       award: 6,  test: s => s.twoModShift >= 1 },
+  { key: 'night',     name: 'Graveyard',                 desc: 'Work the Graveyard Shift.',                award: 5,  test: s => s.nightShift >= 1 },
+  { key: 'comeback',  name: 'Comeback Kid',              desc: 'Survive a shift one strike from fired.',   award: 8,  test: s => s.comeback >= 1 },
+];
+
+function defaultStats() {
+  return { runs: 0, deliveries: 0, shifts: 0, maxShift: 0, spiders: 0, fires: 0,
+           vips: 0, tippers: 0, movers: 0, powerups: 0, perks: 0, everMaxed: 0,
+           bestMaxedRun: 0, bestShiftDeliveries: 0, bestRunParts: 0, perfectShifts: 0,
+           spiderVisits: 0, bestSpiderLoot: 0, noHitClears: 0, twoModShift: 0,
+           nightShift: 0, comeback: 0 };
+}
 function defaultSave() {
   const meta = {};
   for (const m of META) meta[m.key] = 0;
-  return { stars: 0, meta, best: { shifts: 0, delivered: 0 } };
+  return { stars: 0, meta, best: { shifts: 0, delivered: 0 }, stats: defaultStats(), ach: {} };
 }
 function loadSave() {
   const def = defaultSave();
   try {
     const s = JSON.parse(localStorage.getItem('worstElevatorSave'));
     if (!s) return def;
-    return { ...def, ...s, meta: { ...def.meta, ...(s.meta || {}) }, best: { ...def.best, ...(s.best || {}) } };
+    return { ...def, ...s, meta: { ...def.meta, ...(s.meta || {}) }, best: { ...def.best, ...(s.best || {}) },
+             stats: { ...def.stats, ...(s.stats || {}) }, ach: { ...(s.ach || {}) } };
   } catch (e) { return def; }
 }
 function persist() { try { localStorage.setItem('worstElevatorSave', JSON.stringify(save)); } catch (e) {} }
 let save = loadSave();
+
+// ── achievements: the sole source of ★, with on-screen toasts ──
+let achToasts = [];
+function recomputePerks() { save.stats.perks = Object.values(save.meta).reduce((a, b) => a + b, 0); }
+function bumpStat(key, value) {       // set a "best" / max stat then re-check
+  if (value > save.stats[key]) { save.stats[key] = value; checkAchievements(); }
+}
+function checkAchievements() {
+  const s = save.stats;
+  let any = false;
+  for (const a of ACHIEVEMENTS) {
+    if (!save.ach[a.key] && a.test(s)) {
+      save.ach[a.key] = true;
+      const award = Math.round(a.award * (1 + 0.25 * (save.meta.hazardPay || 0)));
+      save.stars += award;
+      achToasts.push({ name: a.name, award, t: 4.2 });
+      any = true;
+      if (typeof sfx !== 'undefined' && sfx.achieve) sfx.achieve();
+    }
+  }
+  if (any) persist();
+}
+const ACH_TOTAL = ACHIEVEMENTS.reduce((a, b) => a + b.award, 0);   // total ★ obtainable
 
 function maxStrikes() {
   return CFG.strikesAllowed + save.meta.unionCard + ((run && run.up.reinforced) || 0) + ((game && game.extraStrike) || 0);
 }
 
 function newRun() {
+  save.stats.runs++;
+  checkAchievements();
   const meta = save.meta;
   const up = {};
   for (const u of UPGRADES) up[u.key] = 0;
@@ -292,6 +363,7 @@ function newRun() {
     theme: THEMES[Math.floor(Math.random() * THEMES.length)],
     seenModifiers: [],              // for variety: avoid repeating conditions back-to-back
     nextShift: {},                  // one-shot effects primed by shop "specials"
+    maxedThisRun: 0,                // upgrades brought to max this run (for achievements)
   };
 }
 
@@ -375,8 +447,14 @@ function startShift() {
               window: 0, glow: 0 },
     spiderGame: null,
     apologyUsed: false,
+    walkoffsThisShift: 0,
     m,
   };
+
+  // achievement stats from the shift's conditions
+  if (modifiers.length >= 2) save.stats.twoModShift = 1;
+  if (modifiers.some(md => md.key === 'night')) save.stats.nightShift = 1;
+  checkAchievements();
 
   // Fuse Box: top up to the guaranteed number of fuses at the start of each shift
   const guaranteedFuses = [0, 1, 2][run.up.fusebox || 0];
@@ -410,6 +488,7 @@ function grantPower() {
   const k = keys[Math.floor(Math.random() * keys.length)];
   game.power[k] = POWERS[k].dur * (game.m.powerDur || 1);   // Power Cell extends duration
   game.banner = { text: `★ ${POWERS[k].name} ★`, t: 1.6, color: POWERS[k].color };
+  save.stats.powerups++; checkAchievements();
   sfx.power();
 }
 
@@ -419,18 +498,24 @@ function endShift(reason) {
     const bonus = 3 + Math.max(0, maxStrikes() - game.strikes);
     game.bonus = bonus;
     run.parts += bonus;
+    // ── achievement stats for a survived shift ──
+    const s = save.stats;
+    s.shifts++;
+    if (game.walkoffsThisShift === 0) s.perfectShifts++;
+    if (game.strikes >= maxStrikes() - 1) s.comeback = 1;   // survived on the brink
+    bumpStat('maxShift', run.shiftNum);
+    bumpStat('bestShiftDeliveries', game.delivered);
+    bumpStat('bestRunParts', run.parts);
+    checkAchievements();
     game.state = 'SHIFT_DONE';
     game.doneT = 0;
     sfx.fanfare();
   } else {
-    // bank the run: earn ★ stars for the Workshop and update the high-water mark
-    const survived = run.shiftNum - 1;
-    const hazard = 1 + 0.25 * save.meta.hazardPay;          // Hazard Pay boosts earnings
-    const earned = Math.floor((survived * 2 + Math.floor(run.totalDelivered / 4)) * hazard);
-    game.starsEarned = earned;
-    save.stars += earned;
-    save.best.shifts = Math.max(save.best.shifts, survived);
+    save.stats.fires++;
+    bumpStat('maxShift', run.shiftNum);
+    save.best.shifts = Math.max(save.best.shifts, run.shiftNum - 1);
     save.best.delivered = Math.max(save.best.delivered, run.totalDelivered);
+    checkAchievements();
     persist();
     game.state = 'FIRED';
     game.doneT = 0;
@@ -456,17 +541,24 @@ function handleKey(k) {
 
   if (st === 'WORKSHOP') {
     if (k === 'enter' || k === 'escape' || k === 'm') { menu = null; return; }
+    if (k === 'a') { menu = 'ACH'; return; }
     if (k >= '1' && k <= '9') { const i = parseInt(k, 10) - 1; if (i < META.length) buyMeta(META[i]); }
+    return;
+  }
+  if (st === 'ACH') {
+    if (k === 'enter' || k === 'escape' || k === 'a' || k === 'm') { menu = null; return; }
     return;
   }
   if (st === 'TITLE') {
     if (k === ' ' || k === 'enter') { run = newRun(); startShift(); }
     if (k === 'm') { menu = 'WORKSHOP'; }
+    if (k === 'a') { menu = 'ACH'; }
     return;
   }
   if (st === 'FIRED') {
     if (k === ' ' || k === 'enter') { menu = null; game.state = 'TITLE'; }
     if (k === 'm') { menu = 'WORKSHOP'; }
+    if (k === 'a') { menu = 'ACH'; }
     return;
   }
   if (st === 'SHIFT_DONE') {
@@ -620,6 +712,7 @@ function spawnPassenger() {
 // ────────────────────────────────────────────────────────────── update
 
 function update(dt) {
+  if (achToasts.length) { for (const t of achToasts) t.t -= dt; achToasts = achToasts.filter(t => t.t > 0); }
   if (game && game.flash) { game.flash.t -= dt; if (game.flash.t <= 0) game.flash = null; }
   if (game && game.shake > 0) game.shake = Math.max(0, game.shake - dt * 25);
   if (game && game.elev) game.elev.jamFlash = Math.max(0, game.elev.jamFlash - dt);
@@ -778,6 +871,14 @@ function update(dt) {
         fare = Math.max(1, fare);
         run.parts += fare;
         game.partsThisShift += fare;
+        // achievement stats
+        save.stats.deliveries++;
+        if (p.kind === 'vip') save.stats.vips++;
+        else if (p.kind === 'tipper') save.stats.tippers++;
+        else if (p.kind === 'mover') save.stats.movers++;
+        bumpStat('bestRunParts', run.parts);
+        bumpStat('bestShiftDeliveries', game.delivered);
+        checkAchievements();
         const col = p.vip ? '#ffd44a' : p.kind === 'tipper' ? '#7affc0' : '#7aaa55';
         flash(col, 0.18);
         burst(e, col);                                  // particle pop at the cabin
@@ -801,6 +902,7 @@ function update(dt) {
 function losePassenger(p) {
   p.state = 'left';
   p.removeAt = game.t + 0.7;
+  game.walkoffsThisShift++;       // any walk-off (even forgiven) breaks a "spotless" shift
   if (game.m.apology && !game.apologyUsed) {   // Apology Notes: first walk-off each shift is free
     game.apologyUsed = true;
     flash('#9adf7a', 0.3);
@@ -846,8 +948,9 @@ function enterSpider() {
     spawnTimer: 1.0,
     spawnEvery: Math.max(1.1, 2.4 - run.shiftNum * 0.07),
     lootPerKill: 2 + (assoc >= 2 ? 1 : 0),
-    spaceWas: false, hitFlash: 0, killed: 0,
+    spaceWas: false, hitFlash: 0, killed: 0, hitTaken: false,
   };
+  save.stats.spiderVisits++; checkAchievements();
   sfx.spider();
 }
 
@@ -924,7 +1027,7 @@ function updateSpider(dt) {
       s.x += (Math.sign(P.x - s.x) || 1) * s.crawl * dt;
       s.sway += dt * 12;
       if (Math.abs(s.x - P.x) < 17 && P.invuln <= 0) {     // it reaches you
-        P.hp--; P.invuln = 1.2; P.hurtT = 0.4; sg.hitFlash = 0.3;
+        P.hp--; P.invuln = 1.2; P.hurtT = 0.4; sg.hitFlash = 0.3; sg.hitTaken = true;
         flash('#7a1030', 0.25); shake(9); sfx.hurt();
         s.x += (s.x < P.x ? -1 : 1) * 34; s.hitCool = 0.6;
       }
@@ -932,6 +1035,7 @@ function updateSpider(dt) {
     if (swinging && !s.dead && Math.abs(s.x - hx) < reach && Math.abs(s.y - hy) < 44) {
       s.dead = true; s.deadT = 0; s.vyDead = -160; s.vxDead = P.facing * 80;
       sg.loot += sg.lootPerKill; sg.killed++;
+      save.stats.spiders++; checkAchievements();
       spiderPop(sg, s.x, s.y, '#ff3a5a'); floatSpiderText(sg, s.x, s.y - 20, `+${sg.lootPerKill}`);
       sfx.slash();
     }
@@ -955,6 +1059,9 @@ function exitSpider() {
     run.parts += got; game.partsThisShift += got;
     game.banner = { text: got > 0 ? `CARRIED OUT +${got} ◆ (${sg.killed} slain)` : 'ESCAPED EMPTY-HANDED',
                     t: 2.2, color: '#ffd44a' };
+    bumpStat('bestSpiderLoot', got);
+    bumpStat('bestRunParts', run.parts);
+    if (!sg.hitTaken && sg.killed >= 3) { save.stats.noHitClears++; checkAchievements(); }
   }
   // back up to the lobby; the webbed floor seals behind you
   game.spider.open = false; game.spider.used = true; game.spider.glow = 0;
@@ -1026,6 +1133,13 @@ function buyUpgrade(u) {
   if (run.parts < cost) { sfx.buzz(); return; }
   run.parts -= cost;
   run.up[u.key]++;
+  if (run.up[u.key] >= u.max) {       // hit max → achievement stats
+    save.stats.everMaxed++;
+    run.maxedThisRun = (run.maxedThisRun || 0) + 1;
+    bumpStat('bestMaxedRun', run.maxedThisRun);
+    checkAchievements();
+  }
+  bumpStat('bestRunParts', run.parts);
   sfx.buy();
 }
 const FUSE_COST = 6;
@@ -1043,6 +1157,7 @@ function buyMeta(m) {
   if (save.stars < cost) { sfx.buzz(); return; }
   save.stars -= cost;
   save.meta[m.key]++;
+  recomputePerks(); checkAchievements();
   persist();
   sfx.buy();
 }
@@ -1070,6 +1185,7 @@ function render() {
   const st = menu || (game ? game.state : 'TITLE');
   if (st !== lastScreen) { screenFade = 1; lastScreen = st; }   // fade-in on every screen change
   if (st === 'WORKSHOP')   drawWorkshop();
+  else if (st === 'ACH')   drawAchievements();
   else if (st === 'TITLE') drawTitle();
   else if (st === 'SHOP')  drawShop();
   else if (st === 'SPIDER') drawSpider();
@@ -1092,6 +1208,8 @@ function render() {
     if (st === 'FIRED') drawFired();
   }
 
+  drawToasts();
+
   if (screenFade > 0) {           // fade-in-from-black on screen changes
     ctx.fillStyle = `rgba(8,6,4,${screenFade})`;
     ctx.fillRect(-20, -20, W + 40, H + 40);
@@ -1100,6 +1218,28 @@ function render() {
   ctx.restore();
 }
 let screenFade = 0, lastScreen = null;
+
+// achievement-unlocked toasts, stacked top-right, in every screen
+function drawToasts() {
+  let ty = 80;
+  for (const t of achToasts) {
+    const a = Math.min(1, t.t) * Math.min(1, (4.2 - t.t) * 3);
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, a));
+    const w = 264, x = W - w - 16;
+    ctx.fillStyle = '#1a1408'; ctx.fillRect(x, ty, w, 44);
+    ctx.fillStyle = '#ffd44a'; ctx.fillRect(x, ty, 4, 44);
+    ctx.strokeStyle = '#ffd44a'; ctx.lineWidth = 1.5; ctx.strokeRect(x, ty, w, 44);
+    ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 11px ui-monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText('★ ACHIEVEMENT', x + 14, ty + 13);
+    ctx.fillStyle = '#e8dcc0'; ctx.font = 'bold 14px ui-monospace';
+    ctx.fillText(t.name, x + 14, ty + 30);
+    ctx.fillStyle = '#7adf9a'; ctx.font = 'bold 14px ui-monospace'; ctx.textAlign = 'right';
+    ctx.fillText(`+${t.award} ★`, x + w - 12, ty + 22);
+    ctx.restore();
+    ty += 52;
+  }
+}
 
 // soft darkened edges for depth/mood
 function drawVignette() {
@@ -1751,10 +1891,10 @@ function drawTitleArt() {
 function drawTitle() {
   drawTitleArt();
   ctx.fillStyle = '#bfa45f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.font = 'bold 44px ui-monospace, Menlo, monospace';
-  ctx.fillText('THE WORST ELEVATOR', W / 2, 150);
+  ctx.font = 'bold 48px ui-monospace, Menlo, monospace';
+  ctx.fillText('THE SPIDER FLOOR', W / 2, 150);
   ctx.font = '14px ui-monospace'; ctx.fillStyle = '#7a6a4a';
-  ctx.fillText('in the tallest building in town', W / 2, 184);
+  ctx.fillText('operating the worst elevator in town', W / 2, 184);
 
   ctx.fillStyle = '#bfa45f'; ctx.font = '15px ui-monospace';
   const lines = [
@@ -1777,12 +1917,15 @@ function drawTitle() {
     ctx.fillText(`best run:  ${save.best.shifts} shifts survived  ·  ${save.best.delivered} deliveries`, W / 2, H - 168);
   }
 
-  drawButton('CLOCK IN  ▸', W / 2 - 238, H - 128, 250, 46,
+  drawButton('CLOCK IN  ▸', W / 2 - 290, H - 128, 200, 46,
              () => { run = newRun(); startShift(); }, true);
-  drawButton(`WORKSHOP  ★ ${save.stars}`, W / 2 + 28, H - 128, 210, 46,
+  drawButton(`WORKSHOP ★${save.stars}`, W / 2 - 78, H - 128, 184, 46,
              () => { menu = 'WORKSHOP'; }, false);
+  const got = ACHIEVEMENTS.filter(a => save.ach[a.key]).length;
+  drawButton(`ACHIEVEMENTS ${got}/${ACHIEVEMENTS.length}`, W / 2 + 118, H - 128, 184, 46,
+             () => { menu = 'ACH'; }, false);
   ctx.fillStyle = '#7a6a4a'; ctx.font = '11px ui-monospace'; ctx.textAlign = 'center';
-  ctx.fillText('SPACE: clock in       M: workshop (spend ★ on permanent perks)', W / 2, H - 64);
+  ctx.fillText('SPACE clock in    ·    M workshop    ·    A achievements (earn ★ to spend)', W / 2, H - 64);
 }
 
 function drawButton(label, x, y, w, h, fn, primary) {
@@ -1977,8 +2120,9 @@ function drawFired() {
   ctx.fillStyle = '#bfa45f'; ctx.font = '18px ui-monospace';
   const survived = run.shiftNum - 1;
   ctx.fillText(`survived ${survived} shift${survived === 1 ? '' : 's'}  ·  ${run.totalDelivered} total deliveries`, W / 2, H / 2 - 24);
-  ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 22px ui-monospace';
-  ctx.fillText(`★ +${game.starsEarned ?? 0} stars earned   (★ ${save.stars} banked)`, W / 2, H / 2 + 12);
+  const got = ACHIEVEMENTS.filter(a => save.ach[a.key]).length;
+  ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 20px ui-monospace';
+  ctx.fillText(`★ ${save.stars} banked  ·  ${got}/${ACHIEVEMENTS.length} achievements`, W / 2, H / 2 + 12);
   ctx.fillStyle = '#7a6a4a'; ctx.font = '14px ui-monospace';
   ctx.fillText(`best: ${save.best.shifts} shifts  ·  ${save.best.delivered} deliveries`, W / 2, H / 2 + 44);
   drawButton('SPEND ★ IN WORKSHOP', W / 2 - 240, H / 2 + 80, 226, 46, () => { menu = 'WORKSHOP'; }, false);
@@ -2034,8 +2178,42 @@ function drawWorkshop() {
 
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#6a6a82'; ctx.font = '12px ui-monospace';
-  ctx.fillText('click a perk (or press 1–9)  ·  perks apply to your NEXT run', W / 2, H - 88);
-  drawButton('◂  BACK', W / 2 - 110, H - 68, 220, 44, () => { menu = null; }, true);
+  ctx.fillText('click a perk (or press 1–9)  ·  A: achievements  ·  perks apply NEXT run', W / 2, H - 88);
+  drawButton('★  ACHIEVEMENTS', W / 2 - 230, H - 68, 220, 44, () => { menu = 'ACH'; }, false);
+  drawButton('◂  BACK', W / 2 + 10, H - 68, 220, 44, () => { menu = null; }, true);
+}
+
+// ── the achievements screen (the source of all ★) ──
+function drawAchievements() {
+  ctx.fillStyle = '#0b0a0d'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#ffd44a'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = 'bold 30px ui-monospace';
+  ctx.fillText('ACHIEVEMENTS', W / 2, 40);
+  const unlocked = ACHIEVEMENTS.filter(a => save.ach[a.key]).length;
+  const earned = ACHIEVEMENTS.filter(a => save.ach[a.key]).reduce((s, a) => s + a.award, 0);
+  ctx.font = '13px ui-monospace'; ctx.fillStyle = '#8a8aa2';
+  ctx.fillText(`${unlocked} / ${ACHIEVEMENTS.length} unlocked  ·  ★ ${earned} of ${ACH_TOTAL} earned  ·  spend in the Workshop`, W / 2, 66);
+
+  const cols = 4, cardW = 186, cardH = 56, gapX = 8, gapY = 7;
+  const totalW = cols * cardW + (cols - 1) * gapX;
+  const x0 = (W - totalW) / 2, y0 = 88;
+  ACHIEVEMENTS.forEach((a, i) => {
+    const cx = x0 + (i % cols) * (cardW + gapX);
+    const cy = y0 + Math.floor(i / cols) * (cardH + gapY);
+    const got = !!save.ach[a.key];
+    ctx.fillStyle = got ? '#1c1808' : '#111016'; ctx.fillRect(cx, cy, cardW, cardH);
+    ctx.strokeStyle = got ? '#ffd44a' : '#26283a'; ctx.lineWidth = got ? 2 : 1; ctx.strokeRect(cx, cy, cardW, cardH);
+    ctx.fillStyle = got ? '#ffe27a' : '#5a5a6a';
+    ctx.font = 'bold 12px ui-monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText((got ? '✓ ' : '') + a.name, cx + 9, cy + 7);
+    ctx.fillStyle = got ? '#9a8a64' : '#4a4a58'; ctx.font = '9.5px ui-monospace';
+    wrapText(a.desc, cx + 9, cy + 24, cardW - 40, 11);
+    ctx.fillStyle = got ? '#7adf9a' : '#5a5a4a'; ctx.font = 'bold 12px ui-monospace';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+    ctx.fillText(`★${a.award}`, cx + cardW - 8, cy + cardH - 7);
+  });
+
+  drawButton('◂  BACK', W / 2 - 110, H - 56, 220, 40, () => { menu = null; }, true);
 }
 
 // ── shop ──
@@ -2179,6 +2357,7 @@ const sfx = (() => {
     buzz()  { tone(140, 0.22, 'sawtooth', 0.45, 80); },
     buy()   { tone(523, 0.08, 'square', 0.4); tone(784, 0.12, 'square', 0.4); },
     power() { [660, 880, 1100, 1320].forEach((f, i) => setTimeout(() => tone(f, 0.1, 'sine', 0.4), i * 55)); },
+    achieve(){ [784, 988, 1319].forEach((f, i) => setTimeout(() => tone(f, 0.14, 'triangle', 0.4), i * 80)); },
     spider(){ tone(120, 0.6, 'sawtooth', 0.3, 88); tone(123.5, 0.6, 'sawtooth', 0.22, 90); },
     sword() { tone(640, 0.09, 'triangle', 0.3, 1100); },
     slash() { tone(900, 0.07, 'square', 0.4, 300); tone(300, 0.08, 'sawtooth', 0.3, 160); },

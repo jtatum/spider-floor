@@ -1,8 +1,8 @@
 {
-  "name": "the-worst-elevator",
-  "version": "0.1.0",
+  "name": "the-spider-floor",
+  "version": "0.2.0",
   "private": true,
-  "description": "An elevator roguelike — operate a junk lift with no floor display.",
+  "description": "The Spider Floor — an elevator roguelike. Operate the worst lift in town; mind the spiders below.",
   "scripts": {
     "test": "node tests/run.mjs"
   }
