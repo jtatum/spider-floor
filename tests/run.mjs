@@ -127,36 +127,53 @@ test('buying an upgrade charges parts and caps at max level', (G) => {
 
 // ── Spider Floor ─────────────────────────────────────────────────────────────
 
-test('Spider Floor: grab then bolt banks floor(pile) parts', (G) => {
-  G.run = G.newRun(); G.startShift();
+// step off the lift onto the Spider Floor ledge
+const enterWeb = (G) => {
   G.game.spider.open = true; G.game.spider.window = 13;
-  openDoorsAt(G, 0); G.game.elev.y = G.SPIDER_Y;
+  const e = G.game.elev; e.y = G.SPIDER_Y; e.v = 0; e.doorTarget = 1; e.doors = 1;
   G.step(3);
-  assert.equal(G.game.state, 'SPIDER', 'stepped off into the web');
-  const before = G.run.parts;
-  G.keys.add(' '); G.step(120); G.keys.delete(' ');
-  const pile = Math.floor(G.game.spiderGame.pile);
-  assert.ok(pile > 0, 'grabbed some loot');
-  G.keys.add('arrowup'); G.step(3); G.keys.delete('arrowup');
-  G.step(120);                     // let the exit resolve
-  assert.equal(G.game.state, 'PLAYING');
-  assert.equal(G.run.parts, before + pile, 'banked exactly floor(pile)');
+  return G.game.spiderGame;
+};
+
+test('Spider Floor: a sword swing slays a spider for loot', (G) => {
+  G.run = G.newRun(); G.startShift();
+  const sg = enterWeb(G);
+  assert.equal(G.game.state, 'SPIDER', 'stepped onto the ledge with a sword');
+  sg.spiders = [];
+  const P = sg.player; P.facing = 1;
+  G.spawnWebSpider(sg); const s = sg.spiders.at(-1);
+  s.state = 'crawl'; s.y = G.PLAT_Y - 12; s.x = P.x + 26; s.dead = false;
+  const lootBefore = sg.loot;
+  G.keys.add(' '); G.step(3); G.keys.delete(' ');
+  assert.ok(s.dead, 'the spider was cut down');
+  assert.ok(sg.loot > lootBefore, 'killing it paid loot');
 });
 
-test('Spider Floor: getting caught costs a strike and banks nothing', (G) => {
+test('Spider Floor: bailing at the lift door carries out your loot', (G) => {
   G.run = G.newRun(); G.startShift();
-  G.game.spider.open = true; G.game.spider.window = 13;
-  openDoorsAt(G, 0); G.game.elev.y = G.SPIDER_Y;
-  G.step(3);
-  const beforeParts = G.run.parts, beforeStrikes = G.game.strikes;
-  G.keys.add(' ');                 // grab forever, never bolt
+  const sg = enterWeb(G);
+  sg.loot = 7; sg.player.x = G.DOOR_X + 8;
+  const before = G.run.parts;
+  G.keys.add('arrowup'); G.step(3); G.keys.delete('arrowup');
+  G.step(140);     // let the exit resolve
+  assert.equal(G.game.state, 'PLAYING');
+  assert.equal(G.run.parts, before + 7, 'banked the loot');
+});
+
+test('Spider Floor: getting overwhelmed costs a strike and banks nothing', (G) => {
+  G.run = G.newRun(); G.startShift();
+  const sg = enterWeb(G);
+  const before = G.run.parts, strikesBefore = G.game.strikes;
+  const P = sg.player; P.hp = 1; P.invuln = 0;
+  sg.spiders = [];
+  G.spawnWebSpider(sg); const s = sg.spiders.at(-1);
+  s.state = 'crawl'; s.y = G.PLAT_Y - 12; s.x = P.x + 4; s.dead = false;   // right on top
   let f = 0;
-  while (G.game.state === 'SPIDER' && G.game.spiderGame && !G.game.spiderGame.result && f < 3000) { G.update(1 / 60); f++; }
-  G.keys.delete(' ');
+  while (G.game.state === 'SPIDER' && G.game.spiderGame && !G.game.spiderGame.result && f < 400) { G.update(1 / 60); f++; }
   assert.equal(G.game.spiderGame.result, 'caught');
-  G.step(120);
-  assert.equal(G.run.parts, beforeParts, 'no loot banked');
-  assert.equal(G.game.strikes, beforeStrikes + 1, 'took a strike');
+  G.step(140);
+  assert.equal(G.run.parts, before, 'no loot banked');
+  assert.equal(G.game.strikes, strikesBefore + 1, 'took a strike');
 });
 
 // ── cross-run meta-progression ───────────────────────────────────────────────

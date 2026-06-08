@@ -829,60 +829,134 @@ function losePassenger(p) {
 }
 
 // ────────────────────────────────────────────────────────── Spider Floor
-// A press-your-luck vignette. Cocooned parts hang in the web; grab as many
-// as you dare while the spider creeps down its thread. Bolt back to the lift
-// in time to bank them — linger too long and it drops on you: lose the lot
-// and take a strike.
+// You step off onto a webbed ledge with a sword. Spiders rappel from the dark
+// and crawl at you; cut them down for parts. Run out of hearts and they swarm
+// you (lose your loot + a strike). Bolt back to the lift door whenever you like
+// to carry out what you've earned. Greed vs. your own skin.
+
+const PLAT_Y = H - 150, PLAT_LEFT = 120, PLAT_RIGHT = W - 120, DOOR_X = PLAT_LEFT + 4;
 
 function enterSpider() {
   game.state = 'SPIDER';
-  game.spiderGame = { descent: 0, pile: 0, t: 0,
-                      grabRate: 3.6 * (1 + 0.35 * save.meta.knownAssociate),
-                      result: null, exitT: 0, sway: 0, grabTick: 0, snap: 0 };
+  const assoc = save.meta.knownAssociate;
+  game.spiderGame = {
+    t: 0, result: null, exitT: 0,
+    player: { x: W / 2, facing: 1, hp: 3, maxHp: 3, swing: 0, swingCool: 0, invuln: 0, hurtT: 0 },
+    spiders: [], fx: [], loot: 0,
+    spawnTimer: 1.0,
+    spawnEvery: Math.max(1.1, 2.4 - run.shiftNum * 0.07),
+    lootPerKill: 2 + (assoc >= 2 ? 1 : 0),
+    spaceWas: false, hitFlash: 0, killed: 0,
+  };
   sfx.spider();
+}
+
+function spawnWebSpider(sg) {
+  const x = PLAT_LEFT + 30 + Math.random() * (PLAT_RIGHT - PLAT_LEFT - 60);
+  sg.spiders.push({
+    x, y: 30 + Math.random() * 30,
+    vy: 70 + run.shiftNum * 3 + Math.random() * 40,
+    dropAt: PLAT_Y - 70 - Math.random() * 120,
+    crawl: 52 + run.shiftNum * 3.5 + Math.random() * 30,
+    state: 'descend', sway: Math.random() * 6, dead: false, deadT: 0, vyDead: 0,
+    size: 11 + Math.random() * 4, hitCool: 0,
+  });
+}
+function spiderPop(sg, x, y, color) {
+  for (let i = 0; i < 8; i++) {
+    const a = Math.random() * Math.PI * 2, s = 30 + Math.random() * 120;
+    sg.fx.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40, life: 0, max: 0.5, color });
+  }
 }
 
 function updateSpider(dt) {
   const sg = game.spiderGame;
   if (!sg) { game.state = 'PLAYING'; return; }
   sg.t += dt;
-  sg.sway += dt * 2.6;
-  if (sg.snap > 0) sg.snap -= dt;
+  if (sg.hitFlash > 0) sg.hitFlash -= dt;
+  for (const f of sg.fx) { f.life += dt; f.vy += 240 * dt; f.x += f.vx * dt; f.y += f.vy * dt; }
+  sg.fx = sg.fx.filter(f => f.life < f.max);
 
-  if (sg.result) { sg.exitT += dt; if (sg.exitT > 1.5) exitSpider(); return; }
+  if (sg.result) { sg.exitT += dt; if (sg.exitT > 1.6) exitSpider(); return; }
+  const P = sg.player;
 
-  const descTime = Math.max(5.5, 9 - run.shiftNum * 0.25);
-  let speed = 1 / descTime;
-  const grabbing = keys.has(' ');
-  if (grabbing) {
-    sg.pile += sg.grabRate * dt;
-    speed *= 1.5;                       // greed draws it down faster
-    sg.grabTick -= dt;
-    if (sg.grabTick <= 0) { sfx.grab(); sg.grabTick = 0.13; }
-  }
-  sg.descent += speed * dt;
+  // ── move ──
+  let mx = 0;
+  if (keys.has('arrowleft') || keys.has('a')) { mx -= 1; P.facing = -1; }
+  if (keys.has('arrowright') || keys.has('d')) { mx += 1; P.facing = 1; }
+  P.x = Math.max(PLAT_LEFT + 14, Math.min(PLAT_RIGHT - 14, P.x + mx * 250 * dt));
 
-  if ((keys.has('arrowup') || keys.has('w')) && sg.pile > 0) {
-    sg.result = 'banked'; sg.snap = 0.4; sfx.chime();
-    return;
+  // ── swing (edge-triggered) ──
+  const space = keys.has(' ');
+  P.swingCool = Math.max(0, P.swingCool - dt);
+  if (space && !sg.spaceWas && P.swingCool <= 0) { P.swing = 0.22; P.swingCool = 0.30; sfx.sword(); }
+  sg.spaceWas = space;
+  if (P.swing > 0) P.swing -= dt;
+  if (P.invuln > 0) P.invuln -= dt;
+  if (P.hurtT > 0) P.hurtT -= dt;
+
+  // ── bail out the lift door ──
+  if ((keys.has('arrowup') || keys.has('w')) && P.x < DOOR_X + 50) { sg.result = 'bailed'; sfx.chime(); return; }
+
+  // ── spawn waves, ramping the longer you linger ──
+  sg.spawnTimer -= dt;
+  if (sg.spawnTimer <= 0) {
+    spawnWebSpider(sg);
+    if (sg.t > 8 && Math.random() < 0.35) spawnWebSpider(sg);   // doubles up late
+    sg.spawnTimer = sg.spawnEvery * (0.7 + Math.random() * 0.6);
+    sg.spawnEvery = Math.max(0.5, sg.spawnEvery * 0.97);
   }
-  if (sg.descent >= 1) {
-    sg.descent = 1; sg.result = 'caught'; shake(10); sfx.caught();
+
+  // ── sword hitbox ──
+  const swinging = P.swing > 0.05;
+  const hx = P.x + P.facing * 30, hy = PLAT_Y - 22, reach = 48;
+
+  for (const s of sg.spiders) {
+    if (s.hitCool > 0) s.hitCool -= dt;
+    if (s.dead) { s.deadT += dt; s.vyDead += 480 * dt; s.y += s.vyDead * dt; s.x += s.vxDead * dt; continue; }
+    if (s.state === 'descend') {
+      s.y += s.vy * dt; s.sway += dt * 4;
+      if (s.y >= s.dropAt) s.state = 'drop';
+    } else if (s.state === 'drop') {
+      s.y += 300 * dt;
+      if (s.y >= PLAT_Y - 12) { s.y = PLAT_Y - 12; s.state = 'crawl'; }
+    } else if (s.state === 'crawl') {
+      s.x += (Math.sign(P.x - s.x) || 1) * s.crawl * dt;
+      s.sway += dt * 12;
+      if (Math.abs(s.x - P.x) < 17 && P.invuln <= 0) {     // it reaches you
+        P.hp--; P.invuln = 1.2; P.hurtT = 0.4; sg.hitFlash = 0.3;
+        flash('#7a1030', 0.25); shake(9); sfx.hurt();
+        s.x += (s.x < P.x ? -1 : 1) * 34; s.hitCool = 0.6;
+      }
+    }
+    if (swinging && !s.dead && Math.abs(s.x - hx) < reach && Math.abs(s.y - hy) < 44) {
+      s.dead = true; s.deadT = 0; s.vyDead = -160; s.vxDead = P.facing * 80;
+      sg.loot += sg.lootPerKill; sg.killed++;
+      spiderPop(sg, s.x, s.y, '#ff3a5a'); floatSpiderText(sg, s.x, s.y - 20, `+${sg.lootPerKill}`);
+      sfx.slash();
+    }
   }
+  sg.spiders = sg.spiders.filter(s => !(s.dead && (s.deadT > 0.9 || s.y > H + 40)));
+
+  if (P.hp <= 0 && !sg.result) { sg.result = 'caught'; shake(13); flash('#5a1a4a', 0.5); sfx.caught(); }
+}
+function floatSpiderText(sg, x, y, text) {
+  sg.fx.push({ x, y, vx: 0, vy: -40, life: 0, max: 0.9, color: '#ffd44a', text });
 }
 
 function exitSpider() {
   const sg = game.spiderGame;
-  if (sg.result === 'banked') {
-    const got = Math.floor(sg.pile);
-    run.parts += got; game.partsThisShift += got;
-    game.banner = { text: `BANKED +${got} ◆ FROM THE WEB`, t: 2.0, color: '#ffd44a' };
-  } else { // caught
+  if (sg.result === 'caught') {
     game.strikes++;
-    game.banner = { text: 'THE SPIDER GOT YOU — STRIKE!', t: 2.0, color: '#aa3a32' };
+    game.banner = { text: 'THE SPIDERS GOT YOU — STRIKE!', t: 2.2, color: '#aa3a32' };
     flash('#5a1a4a', 0.4);
+  } else { // bailed with whatever you carried out
+    const got = Math.floor(sg.loot);
+    run.parts += got; game.partsThisShift += got;
+    game.banner = { text: got > 0 ? `CARRIED OUT +${got} ◆ (${sg.killed} slain)` : 'ESCAPED EMPTY-HANDED',
+                    t: 2.2, color: '#ffd44a' };
   }
-  // climb back up to the lobby; the webbed floor seals behind you
+  // back up to the lobby; the webbed floor seals behind you
   game.spider.open = false; game.spider.used = true; game.spider.glow = 0;
   const e = game.elev;
   e.y = 0; e.v = 0; e.doors = 1; e.doorTarget = 1; e.wasReady = false;
@@ -1722,133 +1796,163 @@ function drawButton(label, x, y, w, h, fn, primary) {
   buttons.push({ x, y, w, h, fn });
 }
 
-// ── the Spider Floor scene ──
+// ── the Spider Floor: a webbed-ledge sword fight ──
 function drawSpider() {
   const sg = game.spiderGame;
-  // backdrop
+  const P = sg.player;
+
+  // backdrop + red pulse when hurt
   ctx.fillStyle = '#0a0510'; ctx.fillRect(0, 0, W, H);
-  const danger = sg.descent;
-  // creeping red as it nears
-  ctx.fillStyle = `rgba(60,8,40,${0.25 + danger * 0.4})`;
+  ctx.fillStyle = `rgba(60,8,40,${0.22 + (sg.hitFlash > 0 ? 0.35 : 0)})`;
   ctx.fillRect(0, 0, W, H);
 
-  // faint background web
-  ctx.strokeStyle = 'rgba(150,130,170,0.10)'; ctx.lineWidth = 1;
-  const cxw = W / 2;
-  for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
-    ctx.beginPath(); ctx.moveTo(cxw, 0); ctx.lineTo(cxw + Math.cos(a) * 700, Math.sin(a) * 700); ctx.stroke();
+  // faint radial web behind everything
+  ctx.strokeStyle = 'rgba(150,130,170,0.08)'; ctx.lineWidth = 1;
+  for (let a = 0; a < Math.PI * 2; a += Math.PI / 9) {
+    ctx.beginPath(); ctx.moveTo(W / 2, -40); ctx.lineTo(W / 2 + Math.cos(a) * 760, -40 + Math.sin(a) * 760); ctx.stroke();
   }
-  for (let r = 80; r < 700; r += 80) {
+  for (let r = 90; r < 760; r += 90) {
     ctx.beginPath();
-    for (let a = 0; a <= Math.PI * 2 + 0.1; a += Math.PI / 8) {
-      const px = cxw + Math.cos(a) * r, py = 0 + Math.sin(a) * r;
+    for (let a = 0; a <= Math.PI * 2 + 0.1; a += Math.PI / 9) {
+      const px = W / 2 + Math.cos(a) * r, py = -40 + Math.sin(a) * r;
       a === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
     }
     ctx.stroke();
   }
 
-  ctx.fillStyle = '#c89aff'; ctx.font = 'bold 26px ui-monospace';
+  ctx.fillStyle = '#c89aff'; ctx.font = 'bold 24px ui-monospace';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('THE SPIDER FLOOR', W / 2, 50);
+  ctx.fillText('THE SPIDER FLOOR', W / 2, 40);
 
-  // hanging cocoons (decor that reads as "loot in the web")
-  ctx.save();
-  for (let i = 0; i < 5; i++) {
-    const lx = 150 + i * 130 + Math.sin(sg.sway + i) * 6;
-    const ly = 120 + (i % 2) * 40;
-    ctx.strokeStyle = 'rgba(200,180,210,0.25)';
-    ctx.beginPath(); ctx.moveTo(lx, 80); ctx.lineTo(lx, ly); ctx.stroke();
-    ctx.fillStyle = '#d8cce0';
-    ctx.beginPath(); ctx.ellipse(lx, ly + 10, 9, 15, 0, 0, 7); ctx.fill();
-    ctx.fillStyle = '#ffd44a';
-    ctx.font = 'bold 10px ui-monospace'; ctx.fillText('◆', lx, ly + 10);
+  // the ledge
+  ctx.fillStyle = '#241620'; ctx.fillRect(PLAT_LEFT - 30, PLAT_Y, PLAT_RIGHT - PLAT_LEFT + 60, H - PLAT_Y);
+  ctx.fillStyle = '#3a2436'; ctx.fillRect(PLAT_LEFT - 30, PLAT_Y, PLAT_RIGHT - PLAT_LEFT + 60, 6);
+  // web strands draping under the ledge
+  ctx.strokeStyle = 'rgba(180,160,200,0.18)'; ctx.lineWidth = 1;
+  for (let x = PLAT_LEFT; x < PLAT_RIGHT; x += 46) {
+    ctx.beginPath(); ctx.moveTo(x, PLAT_Y + 6); ctx.quadraticCurveTo(x + 23, PLAT_Y + 40, x + 46, PLAT_Y + 6); ctx.stroke();
   }
-  ctx.restore();
 
-  // pile grabbed — top, clear of the spider's path
-  ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 22px ui-monospace';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(`◆ ${Math.floor(sg.pile)} grabbed`, W / 2, 82);
+  // the lift door (your way out) at the left
+  ctx.fillStyle = '#1a1018'; ctx.fillRect(DOOR_X - 6, PLAT_Y - 76, 54, 76);
+  ctx.strokeStyle = '#7aff9a'; ctx.lineWidth = 2; ctx.strokeRect(DOOR_X - 6, PLAT_Y - 76, 54, 76);
+  ctx.fillStyle = 'rgba(120,255,160,0.12)'; ctx.fillRect(DOOR_X - 2, PLAT_Y - 72, 46, 70);
+  ctx.fillStyle = '#7aff9a'; ctx.font = '9px ui-monospace'; ctx.fillText('LIFT', DOOR_X + 21, PLAT_Y - 84);
 
-  // vertical danger gauge down the right margin — mirrors the spider's drop
-  const gX = W - 34, gTop = 120, gH = H - 230;
-  ctx.fillStyle = '#1a0a14'; ctx.fillRect(gX - 7, gTop, 14, gH);
-  ctx.fillStyle = danger > 0.75 ? '#ff3a4a' : danger > 0.5 ? '#d4a050' : '#7aaa55';
-  ctx.fillRect(gX - 7, gTop, 14, gH * Math.min(1, danger));
-  ctx.strokeStyle = '#6a4a6a'; ctx.lineWidth = 1; ctx.strokeRect(gX - 7.5, gTop - 0.5, 14, gH + 1);
-  ctx.fillStyle = '#9a7aaa'; ctx.font = '9px ui-monospace';
-  ctx.fillText('FAR', gX, gTop - 14); ctx.fillText('CLOSE!', gX, gTop + gH + 12);
+  // spiders + their threads
+  for (const s of sg.spiders) {
+    if (!s.dead && s.state === 'descend') {
+      ctx.strokeStyle = 'rgba(220,210,230,0.4)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(s.x, -10); ctx.lineTo(s.x, s.y); ctx.stroke();
+    }
+    drawWebSpider(s);
+  }
 
-  // the lift doorway you must reach — bottom center, the spider's target
-  const youY = H - 116;
-  ctx.fillStyle = '#1a1018';
-  ctx.fillRect(W / 2 - 44, youY, 88, 76);
-  ctx.strokeStyle = '#6a4a6a'; ctx.lineWidth = 2; ctx.strokeRect(W / 2 - 44, youY, 88, 76);
-  ctx.fillStyle = '#3a5a78'; ctx.fillRect(W / 2 - 8, youY + 40, 16, 22);
-  ctx.fillStyle = '#d4a878'; ctx.beginPath(); ctx.arc(W / 2, youY + 34, 7, 0, 7); ctx.fill();
-  ctx.fillStyle = '#7aff9a'; ctx.font = '10px ui-monospace'; ctx.fillText('THE LIFT', W / 2, youY - 10);
+  // the operator with a sword
+  drawSwordPlayer(P, sg);
 
-  // the descending spider — its path runs from the top down toward the lift
-  const threadTop = 70;
-  const spY = 150 + sg.descent * (youY - 150);
-  const spX = W / 2 + Math.sin(sg.sway) * 70;
-  ctx.strokeStyle = 'rgba(220,210,230,0.5)'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(W / 2, threadTop); ctx.lineTo(spX, spY); ctx.stroke();
-  drawSpiderBody(spX, spY, sg);
-
-  // prompts at the very bottom, below the lift
-  if (!sg.result) {
-    ctx.textAlign = 'center';
-    ctx.fillStyle = keys.has(' ') ? '#ffd44a' : '#c89aff';
-    ctx.font = 'bold 14px ui-monospace';
-    ctx.fillText('HOLD  SPACE  to grab loot', W / 2, H - 30);
-    ctx.fillStyle = sg.pile > 0 ? '#7aff9a' : '#4a6a52';
-    ctx.fillText('press  ↑  to bolt back' + (sg.pile > 0 ? '  —  bank your loot!' : ''), W / 2, H - 12);
-  } else {
-    ctx.fillStyle = 'rgba(8,4,12,0.78)'; ctx.fillRect(0, H / 2 - 60, W, 120);
-    ctx.textAlign = 'center';
-    if (sg.result === 'banked') {
-      ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 44px ui-monospace';
-      ctx.fillText(`BANKED ◆ ${Math.floor(sg.pile)}`, W / 2, H / 2);
+  // particles / floating text
+  for (const f of sg.fx) {
+    ctx.globalAlpha = Math.max(0, 1 - f.life / f.max);
+    if (f.text) {
+      ctx.fillStyle = f.color; ctx.font = 'bold 13px ui-monospace'; ctx.textAlign = 'center';
+      ctx.fillText(f.text, f.x, f.y);
     } else {
-      ctx.fillStyle = '#ff3a4a'; ctx.font = 'bold 48px ui-monospace';
-      ctx.fillText('CAUGHT!', W / 2, H / 2);
+      ctx.fillStyle = f.color; ctx.fillRect(f.x - 1.5, f.y - 1.5, 3, 3);
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // ── HUD: hearts + loot ──
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  for (let i = 0; i < P.maxHp; i++) {
+    ctx.fillStyle = i < P.hp ? '#ff4a6a' : '#3a2030';
+    ctx.font = 'bold 22px ui-monospace'; ctx.fillText('♥', 24 + i * 26, 40);
+  }
+  ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 20px ui-monospace'; ctx.textAlign = 'right';
+  ctx.fillText(`◆ ${Math.floor(sg.loot)}  ·  ${sg.killed} slain`, W - 24, 40);
+
+  // prompts
+  if (!sg.result) {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#c89aff'; ctx.font = 'bold 14px ui-monospace';
+    ctx.fillText('← →  move      SPACE  swing sword', W / 2, H - 30);
+    ctx.fillStyle = P.x < DOOR_X + 50 ? '#7aff9a' : '#4a6a52';
+    ctx.fillText('reach the LIFT and press ↑ to carry out your loot', W / 2, H - 12);
+  } else {
+    ctx.fillStyle = 'rgba(8,4,12,0.8)'; ctx.fillRect(0, H / 2 - 60, W, 120);
+    ctx.textAlign = 'center';
+    if (sg.result === 'caught') {
+      ctx.fillStyle = '#ff3a4a'; ctx.font = 'bold 46px ui-monospace';
+      ctx.fillText('OVERWHELMED!', W / 2, H / 2 - 6);
+      ctx.fillStyle = '#bfa45f'; ctx.font = '15px ui-monospace';
+      ctx.fillText('the loot scatters — and a strike', W / 2, H / 2 + 30);
+    } else {
+      ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 42px ui-monospace';
+      ctx.fillText(`CARRIED OUT ◆ ${Math.floor(sg.loot)}`, W / 2, H / 2 - 6);
+      ctx.fillStyle = '#bfa45f'; ctx.font = '15px ui-monospace';
+      ctx.fillText(`${sg.killed} spiders slain`, W / 2, H / 2 + 30);
     }
   }
 }
 
-function drawSpiderBody(x, y, sg) {
-  const wig = Math.sin(sg.sway * 2) * 5;
-  const wig2 = Math.cos(sg.sway * 2) * 5;
-  // eight jointed legs
-  ctx.strokeStyle = '#120810'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+function drawSwordPlayer(P, sg) {
+  const x = P.x, y = PLAT_Y;          // feet on the ledge
+  const flicker = P.invuln > 0 && Math.floor(P.invuln * 18) % 2 === 0;
+  ctx.save();
+  if (flicker) ctx.globalAlpha = 0.4;
+  // legs
+  ctx.fillStyle = '#1a1410'; ctx.fillRect(x - 7, y - 14, 5, 14); ctx.fillRect(x + 2, y - 14, 5, 14);
+  // body + head (lean when hurt)
+  const lean = P.hurtT > 0 ? -P.facing * 4 : 0;
+  ctx.fillStyle = '#4a6a9a'; ctx.fillRect(x - 9 + lean, y - 36, 18, 23);
+  ctx.fillStyle = '#d4a878'; ctx.beginPath(); ctx.arc(x + lean, y - 44, 8, 0, 7); ctx.fill();
+  // a little cap
+  ctx.fillStyle = '#2a2018'; ctx.fillRect(x - 8 + lean, y - 50, 16, 4); ctx.fillRect(x - 5 + lean, y - 54, 10, 5);
+
+  // sword
+  const swingP = P.swing > 0 ? Math.min(1, (0.22 - P.swing) / 0.22) : -1;
+  ctx.strokeStyle = '#e8eef6'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  if (swingP >= 0) {
+    // an arc sweep in front
+    const a0 = -1.1, a1 = 0.9, ang = a0 + (a1 - a0) * swingP;
+    const bx = x + P.facing * 8, by = y - 26;
+    ctx.strokeStyle = `rgba(200,230,255,${0.5 - swingP * 0.4})`;
+    ctx.lineWidth = 10; ctx.beginPath();
+    ctx.arc(bx, by, 34, P.facing > 0 ? a0 : Math.PI - a0, P.facing > 0 ? ang : Math.PI - ang, P.facing < 0);
+    ctx.stroke();
+    ctx.strokeStyle = '#e8eef6'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(bx, by);
+    ctx.lineTo(bx + P.facing * Math.cos(ang) * 38, by + Math.sin(ang) * 38); ctx.stroke();
+  } else {
+    // resting: sword held out
+    ctx.beginPath(); ctx.moveTo(x + P.facing * 6, y - 28); ctx.lineTo(x + P.facing * 34, y - 34); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawWebSpider(s) {
+  const x = s.x, y = s.y;
+  const wig = Math.sin(s.sway) * 4, wig2 = Math.cos(s.sway) * 4;
+  ctx.save();
+  if (s.dead) ctx.globalAlpha = Math.max(0, 1 - s.deadT / 0.9);
+  ctx.strokeStyle = '#120810'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  const sz = s.size;
   for (let i = -1; i <= 1; i += 2) {
     for (let l = 0; l < 4; l++) {
-      const spread = 22 + l * 6;
-      const rise = -14 + l * 12;
-      const knee = { x: x + i * spread, y: y + rise + (l % 2 ? wig : wig2) };
-      const foot = { x: knee.x + i * 16, y: knee.y + 22 + (l % 2 ? wig2 : wig) };
-      ctx.beginPath();
-      ctx.moveTo(x, y); ctx.lineTo(knee.x, knee.y); ctx.lineTo(foot.x, foot.y);
-      ctx.stroke();
+      const knee = { x: x + i * (sz * 0.9 + l * 4), y: y - sz * 0.5 + l * sz * 0.5 + (l % 2 ? wig : wig2) };
+      const foot = { x: knee.x + i * sz, y: knee.y + sz + (l % 2 ? wig2 : wig) };
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(knee.x, knee.y); ctx.lineTo(foot.x, foot.y); ctx.stroke();
     }
   }
-  // abdomen + head
-  ctx.fillStyle = '#160a12';
-  ctx.beginPath(); ctx.ellipse(x, y + 4, 20, 24, 0, 0, 7); ctx.fill();
-  ctx.fillStyle = '#1c0e18';
-  ctx.beginPath(); ctx.arc(x, y - 16, 13, 0, 7); ctx.fill();
-  // a faint hourglass marking
-  ctx.fillStyle = '#5a1030';
-  ctx.beginPath(); ctx.moveTo(x - 5, y - 2); ctx.lineTo(x + 5, y - 2);
-  ctx.lineTo(x - 5, y + 14); ctx.lineTo(x + 5, y + 14); ctx.closePath(); ctx.fill();
-  // glowing eyes
-  ctx.fillStyle = '#ff2a4a';
-  for (const [dx, dy] of [[-6, -18], [6, -18], [-3, -13], [3, -13]]) {
-    ctx.beginPath(); ctx.arc(x + dx, y + dy, 2.4, 0, 7); ctx.fill();
+  ctx.fillStyle = s.dead ? '#3a1018' : '#160a12';
+  ctx.beginPath(); ctx.ellipse(x, y + sz * 0.2, sz, sz * 1.15, 0, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(x, y - sz * 0.8, sz * 0.62, 0, 7); ctx.fill();
+  ctx.fillStyle = s.dead ? '#7a2030' : '#ff2a4a';
+  for (const [dx, dy] of [[-sz * 0.3, -sz], [sz * 0.3, -sz]]) {
+    ctx.beginPath(); ctx.arc(x + dx, y + dy, 1.8, 0, 7); ctx.fill();
   }
-  ctx.fillStyle = 'rgba(255,60,90,0.25)';
-  ctx.beginPath(); ctx.arc(x, y - 15, 16, 0, 7); ctx.fill();
+  ctx.restore();
 }
 
 // ── shift done overlay ──
@@ -2076,7 +2180,9 @@ const sfx = (() => {
     buy()   { tone(523, 0.08, 'square', 0.4); tone(784, 0.12, 'square', 0.4); },
     power() { [660, 880, 1100, 1320].forEach((f, i) => setTimeout(() => tone(f, 0.1, 'sine', 0.4), i * 55)); },
     spider(){ tone(120, 0.6, 'sawtooth', 0.3, 88); tone(123.5, 0.6, 'sawtooth', 0.22, 90); },
-    grab()  { tone(280 + Math.random() * 80, 0.05, 'square', 0.22); },
+    sword() { tone(640, 0.09, 'triangle', 0.3, 1100); },
+    slash() { tone(900, 0.07, 'square', 0.4, 300); tone(300, 0.08, 'sawtooth', 0.3, 160); },
+    hurt()  { tone(200, 0.16, 'sawtooth', 0.5, 90); },
     caught(){ [600, 480, 360, 250, 170].forEach((f, i) => setTimeout(() => tone(f, 0.18, 'sawtooth', 0.45), i * 70)); },
     fanfare(){ [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => tone(f, 0.18, 'square', 0.4), i * 90)); },
     fired() { [330, 294, 262, 196].forEach((f, i) => setTimeout(() => tone(f, 0.3, 'sawtooth', 0.4), i * 160)); },
