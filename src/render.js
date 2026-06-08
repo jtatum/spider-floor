@@ -704,36 +704,60 @@ function drawBanner() {
 
 // ── title ──
 function drawTitleArt() {
+  const t = performance.now() / 1000;
   // warm glow behind the wordmark
-  const g = ctx.createRadialGradient(W / 2, 150, 20, W / 2, 150, 380);
+  const g = ctx.createRadialGradient(W / 2, 120, 20, W / 2, 120, 380);
   g.addColorStop(0, 'rgba(150,110,50,0.16)'); g.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, 320);
 
-  // a little elevator, bobbing on its cable, as a logo
-  const t = performance.now() / 1000;
-  const cx = W / 2, cy = 74 + Math.sin(t * 1.5) * 4, cw = 52, ch = 38;
-  ctx.strokeStyle = '#2a2018'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(cx, 18); ctx.lineTo(cx, cy - ch / 2); ctx.stroke();
-  ctx.fillStyle = '#5a4530'; ctx.fillRect(cx - cw / 2, cy - ch / 2, cw, ch);
-  ctx.fillStyle = '#3a2a1c'; ctx.fillRect(cx - cw / 2 + 3, cy - ch / 2 + 3, cw - 6, ch - 6);
-  ctx.fillStyle = '#ffdd99'; ctx.fillRect(cx - 7, cy - ch / 2 + 4, 14, 3);
-  // two tiny passengers aboard
-  ctx.fillStyle = '#3a5a78'; ctx.fillRect(cx - 12, cy - 2, 6, 9);
-  ctx.fillStyle = '#5a3a4a'; ctx.fillRect(cx + 5, cy - 2, 6, 9);
-  ctx.fillStyle = '#d4a878';
-  ctx.beginPath(); ctx.arc(cx - 9, cy - 5, 3, 0, 7); ctx.arc(cx + 8, cy - 5, 3, 0, 7); ctx.fill();
+  const cx = W / 2;
+  const sway = Math.sin(t * 1.1);
+
+  // ── a giant spider gripping the top, dangling the lift on a silk thread ──
+  const sy = 40;                 // spider body
+  ctx.strokeStyle = '#160a12'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+  for (let i = -1; i <= 1; i += 2) {
+    for (let l = 0; l < 4; l++) {
+      const knee = { x: cx + i * (16 + l * 7), y: sy - 12 - l * 3 };
+      const foot = { x: cx + i * (30 + l * 18), y: 9 + l * 2 + Math.sin(t * 2 + l) * 1.5 };  // grip the ceiling
+      ctx.beginPath(); ctx.moveTo(cx, sy); ctx.lineTo(knee.x, knee.y); ctx.lineTo(foot.x, foot.y); ctx.stroke();
+    }
+  }
+  ctx.fillStyle = '#1c0e18';
+  ctx.beginPath(); ctx.ellipse(cx, sy + 6, 19, 23, 0, 0, 7); ctx.fill();   // abdomen
+  ctx.beginPath(); ctx.arc(cx, sy - 12, 12, 0, 7); ctx.fill();             // head
+  ctx.fillStyle = '#7a1030';                                               // red hourglass
+  ctx.beginPath(); ctx.moveTo(cx - 6, sy - 2); ctx.lineTo(cx + 6, sy - 2);
+  ctx.lineTo(cx - 6, sy + 14); ctx.lineTo(cx + 6, sy + 14); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(255,60,90,0.22)'; ctx.beginPath(); ctx.arc(cx, sy - 12, 17, 0, 7); ctx.fill();
+  ctx.fillStyle = '#ff3a5a';                                               // eyes
+  for (const [dx, dy] of [[-5, -14], [5, -14], [-2, -10], [2, -10]]) { ctx.beginPath(); ctx.arc(cx + dx, sy + dy, 2, 0, 7); ctx.fill(); }
+
+  // silk thread down to the bobbing elevator
+  const ey = 108 + sway * 4, ex = cx + sway * 6;
+  ctx.strokeStyle = 'rgba(220,210,230,0.55)'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(cx, sy + 26); ctx.lineTo(ex, ey - 16); ctx.stroke();
+
+  // the dangling elevator car (two riders aboard, ceiling light)
+  const cw = 46, ch = 32;
+  ctx.fillStyle = '#5a4530'; ctx.fillRect(ex - cw / 2, ey - ch / 2, cw, ch);
+  ctx.fillStyle = '#3a2a1c'; ctx.fillRect(ex - cw / 2 + 3, ey - ch / 2 + 3, cw - 6, ch - 6);
+  ctx.fillStyle = '#ffdd99'; ctx.fillRect(ex - 7, ey - ch / 2 + 3, 14, 3);
+  ctx.fillStyle = '#3a5a78'; ctx.fillRect(ex - 11, ey - 1, 6, 8);
+  ctx.fillStyle = '#5a3a4a'; ctx.fillRect(ex + 5, ey - 1, 6, 8);
+  ctx.fillStyle = '#d4a878'; ctx.beginPath(); ctx.arc(ex - 8, ey - 4, 3, 0, 7); ctx.arc(ex + 8, ey - 4, 3, 0, 7); ctx.fill();
   ctx.strokeStyle = '#bfa45f'; ctx.lineWidth = 1;
-  ctx.strokeRect(cx - cw / 2 + 0.5, cy - ch / 2 + 0.5, cw - 1, ch - 1);
-  ctx.beginPath(); ctx.moveTo(cx, cy - ch / 2 + 3); ctx.lineTo(cx, cy + ch / 2 - 3); ctx.stroke();
+  ctx.strokeRect(ex - cw / 2 + 0.5, ey - ch / 2 + 0.5, cw - 1, ch - 1);
+  ctx.beginPath(); ctx.moveTo(ex, ey - ch / 2 + 3); ctx.lineTo(ex, ey + ch / 2 - 3); ctx.stroke();
 }
 
 function drawTitle() {
   drawTitleArt();
   ctx.fillStyle = '#bfa45f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = 'bold 48px ui-monospace, Menlo, monospace';
-  ctx.fillText('THE SPIDER FLOOR', W / 2, 150);
+  ctx.fillText('THE SPIDER FLOOR', W / 2, 162);
   ctx.font = '14px ui-monospace'; ctx.fillStyle = '#7a6a4a';
-  ctx.fillText('operating the worst elevator in town', W / 2, 184);
+  ctx.fillText('operating the worst elevator in town', W / 2, 194);
 
   ctx.fillStyle = '#bfa45f'; ctx.font = '15px ui-monospace';
   const lines = [
@@ -880,14 +904,16 @@ function drawSpider() {
 
 function drawSwordPlayer(P, sg) {
   const x = P.x, y = PLAT_Y;          // feet on the ledge
-  const flicker = P.invuln > 0 && Math.floor(P.invuln * 18) % 2 === 0;
+  const inv = P.invuln > 0;           // brief invulnerability after a hit
   ctx.save();
-  if (flicker) ctx.globalAlpha = 0.4;
+  // a soft pulse (never fully transparent) so it reads as "recovering", not a glitch
+  if (inv) ctx.globalAlpha = 0.6 + 0.4 * Math.abs(Math.sin(P.invuln * 12));
+  const hurtTint = P.hurtT > 0;       // flash red on the frame of impact
   // legs
   ctx.fillStyle = '#1a1410'; ctx.fillRect(x - 7, y - 14, 5, 14); ctx.fillRect(x + 2, y - 14, 5, 14);
   // body + head (lean when hurt)
   const lean = P.hurtT > 0 ? -P.facing * 4 : 0;
-  ctx.fillStyle = '#4a6a9a'; ctx.fillRect(x - 9 + lean, y - 36, 18, 23);
+  ctx.fillStyle = hurtTint ? '#c84a5a' : '#4a6a9a'; ctx.fillRect(x - 9 + lean, y - 36, 18, 23);
   ctx.fillStyle = '#d4a878'; ctx.beginPath(); ctx.arc(x + lean, y - 44, 8, 0, 7); ctx.fill();
   // a little cap
   ctx.fillStyle = '#2a2018'; ctx.fillRect(x - 8 + lean, y - 50, 16, 4); ctx.fillRect(x - 5 + lean, y - 54, 10, 5);

@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "elevat",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8123"],
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["tools/dev-server.mjs", "8123"],
       "port": 8123
     }
   ]
