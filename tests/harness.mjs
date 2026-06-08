@@ -7,7 +7,12 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const SRC = fs.readFileSync(path.join(here, '..', 'game.js'), 'utf8');
+// The game is split into ordered classic scripts that share one global scope;
+// concatenating them in load order reproduces the exact browser environment.
+const SRC_FILES = ['data.js', 'sim.js', 'render.js', 'audio.js', 'main.js'];
+const SRC = SRC_FILES
+  .map(f => fs.readFileSync(path.join(here, '..', 'src', f), 'utf8'))
+  .join('\n');
 
 // A shim appended to the source. Because it runs in the same scope as game.js,
 // it closes over the module's let/const bindings (which a vm context does NOT

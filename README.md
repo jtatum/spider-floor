@@ -36,12 +36,28 @@ strikes and you're fired.
 
 ## Develop
 
-Plain HTML + CSS + canvas, single `game.js`. No framework, no bundler.
+Plain HTML + CSS + canvas. No framework, no bundler. The source is split into
+ordered classic scripts under `src/` (they share one global scope and are
+loaded in order by `index.html`):
+
+| file | what's in it |
+| --- | --- |
+| `src/data.js`   | config (`CFG`), all data tables, save/achievements, state & economy |
+| `src/sim.js`    | input, the simulation `update()`, the Spider Floor combat |
+| `src/render.js` | every `draw*` + the `render()` loop |
+| `src/audio.js`  | the tiny procedural synth (`sfx`) |
+| `src/main.js`   | the rAF loop, canvas fit, touch controls |
 
 ```
 npm test     # headless logic tests (Node, no deps) — node tests/run.mjs
 ```
 
-The tests load the real `game.js` into a `vm` context with stubbed browser
-globals and drive the actual update loop. Tuning knobs live in `CFG` at the top
-of `game.js`.
+The tests (`tests/`) concatenate the `src/` files in load order into a `vm`
+context with stubbed browser globals and drive the real update loop. Tuning
+knobs live in `CFG` at the top of `src/data.js`.
+
+## Deploy
+
+A GitHub Actions workflow (`.github/workflows/deploy.yml`) runs the tests and
+publishes to **GitHub Pages** on every push to `main`. One-time setup after you
+create the repo: **Settings → Pages → Source: GitHub Actions**.
