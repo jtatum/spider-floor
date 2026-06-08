@@ -187,6 +187,22 @@ test('Workshop perks apply to the next run', (G) => {
   assert.equal(G.maxStrikes(), 4, 'Union Card adds a strike');
 });
 
+test('Master Key installs one random upgrade each run; Sturdy Cables fits a damper', (G) => {
+  G.save.meta.masterKey = 1; G.save.meta.sturdyStart = 1;
+  G.run = G.newRun();
+  assert.ok(G.run.up.damper >= 1, 'Sturdy Cables fits a Flywheel Damper');
+  const total = Object.values(G.run.up).reduce((a, b) => a + b, 0);
+  assert.ok(total >= 2, 'damper + a master-key upgrade are installed');
+});
+
+test('Hazard Pay multiplies star earnings', (G) => {
+  G.save.meta.hazardPay = 2;       // +50%
+  G.run = G.newRun(); G.startShift();
+  G.run.shiftNum = 4; G.run.totalDelivered = 40;   // base = 3*2 + 10 = 16
+  G.endShift('fired');
+  assert.equal(G.game.starsEarned, Math.floor(16 * 1.5), 'earned 24 with +50%');
+});
+
 test('Workshop: a perk caps at max and refuses when you cannot afford it', (G) => {
   const m = G.META.find(x => x.key === 'unionCard'); // max 1, cost 9
   G.save.stars = 5; buyMeta(G, 'unionCard');

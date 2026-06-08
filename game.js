@@ -220,17 +220,28 @@ let menu = null;   // out-of-run overlay screen ('WORKSHOP'); null = follow game
 // ★ stars are earned every run and spent on permanent perks that make each
 // new career start a little less hopeless. This is the long-game replay loop.
 const META = [
-  { key: 'severance',     name: 'Severance Pay',    max: 3, costs: [3, 5, 8],
-    blurb: ['Clock in with ◆5 already in pocket.', 'Clock in with ◆10.', 'Clock in with ◆15.'] },
+  { key: 'severance',     name: 'Severance Pay',    max: 4, costs: [3, 5, 8, 12],
+    blurb: ['Clock in with ◆5 in pocket.', 'Clock in with ◆10.', 'Clock in with ◆15.', 'Clock in with ◆20.'] },
   { key: 'footInDoor',    name: 'Foot in the Door', max: 3, costs: [4, 7, 11],
-    blurb: ['Start each run with a Floor Counter fitted.',
-            '…and Quick Doors.', '…and Auto-Leveling, too.'] },
+    blurb: ['Start each run with a Floor Counter fitted.', '…and Quick Doors.', '…and Auto-Leveling, too.'] },
   { key: 'roomierStart',  name: 'Roomier Cabin',    max: 2, costs: [5, 8],
     blurb: ['Start every run carrying +1 passenger.', 'Start every run carrying +2.'] },
+  { key: 'sturdyStart',   name: 'Sturdy Cables',    max: 1, costs: [7],
+    blurb: ['Start every run with a Flywheel Damper — stopping is easier.'] },
+  { key: 'masterKey',     name: 'Master Key',       max: 1, costs: [10],
+    blurb: ['Begin every run with one random upgrade already installed.'] },
   { key: 'unionCard',     name: 'Union Card',       max: 1, costs: [9],
     blurb: ['One extra strike before they fire you.'] },
   { key: 'frequentFlyer', name: 'Frequent Flyer',   max: 1, costs: [8],
     blurb: ['Every fare you complete pays +1 ◆.'] },
+  { key: 'greaseMonkey',  name: 'Grease Monkey',    max: 1, costs: [8],
+    blurb: ['Every run starts with quicker base doors.'] },
+  { key: 'bigShop',       name: 'Connections',      max: 2, costs: [7, 11],
+    blurb: ['The shop offers +1 choice each visit.', 'The shop offers +2 choices.'] },
+  { key: 'rerollToken',   name: 'Haggler',          max: 2, costs: [6, 9],
+    blurb: ['Begin each shop visit with 1 free reroll.', 'Begin each visit with 2 free rerolls.'] },
+  { key: 'hazardPay',     name: 'Hazard Pay',       max: 2, costs: [7, 11],
+    blurb: ['Earn 25% more ★ per run.', 'Earn 50% more ★ per run.'] },
   { key: 'reputation',    name: 'Reputation',       max: 2, costs: [4, 7],
     blurb: ['VIP passengers turn up more often.', 'VIPs turn up much more often.'] },
   { key: 'knownAssociate',name: 'Known Associate',  max: 2, costs: [5, 8],
@@ -238,12 +249,9 @@ const META = [
 ];
 
 function defaultSave() {
-  return {
-    stars: 0,
-    meta: { severance: 0, footInDoor: 0, roomierStart: 0, unionCard: 0,
-            frequentFlyer: 0, reputation: 0, knownAssociate: 0 },
-    best: { shifts: 0, delivered: 0 },
-  };
+  const meta = {};
+  for (const m of META) meta[m.key] = 0;
+  return { stars: 0, meta, best: { shifts: 0, delivered: 0 } };
 }
 function loadSave() {
   const def = defaultSave();
@@ -268,6 +276,11 @@ function newRun() {
   if (meta.footInDoor >= 1) up.floorCounter = 1;
   if (meta.footInDoor >= 2) up.fastDoors = 1;
   if (meta.footInDoor >= 3) up.autoLevel = 1;
+  if (meta.sturdyStart >= 1) up.damper = Math.max(up.damper, 1);
+  if (meta.masterKey >= 1) {            // one random upgrade free, every run
+    const pool = UPGRADES.filter(u => up[u.key] < u.max);
+    if (pool.length) up[pool[Math.floor(Math.random() * pool.length)].key]++;
+  }
   return {
     up,
     parts: [0, 5, 10, 15, 20][meta.severance] ?? 0,
@@ -412,7 +425,8 @@ function endShift(reason) {
   } else {
     // bank the run: earn ★ stars for the Workshop and update the high-water mark
     const survived = run.shiftNum - 1;
-    const earned = survived * 2 + Math.floor(run.totalDelivered / 4);
+    const hazard = 1 + 0.25 * save.meta.hazardPay;          // Hazard Pay boosts earnings
+    const earned = Math.floor((survived * 2 + Math.floor(run.totalDelivered / 4)) * hazard);
     game.starsEarned = earned;
     save.stars += earned;
     save.best.shifts = Math.max(save.best.shifts, survived);
@@ -1878,9 +1892,9 @@ function drawWorkshop() {
   ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 20px ui-monospace';
   ctx.fillText(`★ ${save.stars} stars`, W / 2, 114);
 
-  const cols = 2, cardW = 380, cardH = 84, gapX = 24, gapY = 12;
+  const cols = 3, cardW = 250, cardH = 76, gapX = 14, gapY = 11;
   const totalW = cols * cardW + (cols - 1) * gapX;
-  const x0 = (W - totalW) / 2, y0 = 144;
+  const x0 = (W - totalW) / 2, y0 = 138;
   META.forEach((m, i) => {
     const cx = x0 + (i % cols) * (cardW + gapX);
     const cy = y0 + Math.floor(i / cols) * (cardH + gapY);
@@ -1894,30 +1908,30 @@ function drawWorkshop() {
     ctx.lineWidth = 2; ctx.strokeRect(cx, cy, cardW, cardH);
 
     ctx.fillStyle = afford ? '#ffd44a' : '#4a4a5a';
-    ctx.font = 'bold 15px ui-monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    ctx.fillText(`${i + 1}`, cx + 12, cy + 12);
-    ctx.fillStyle = '#b9c4e0'; ctx.font = 'bold 16px ui-monospace';
-    ctx.fillText(m.name, cx + 34, cy + 11);
+    ctx.font = 'bold 13px ui-monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    if (i < 9) ctx.fillText(`${i + 1}`, cx + 9, cy + 9);
+    ctx.fillStyle = '#b9c4e0'; ctx.font = 'bold 14px ui-monospace';
+    ctx.fillText(m.name, cx + (i < 9 ? 24 : 9), cy + 8);
 
     for (let l = 0; l < m.max; l++) {
       ctx.fillStyle = l < lvl ? '#7aaa55' : '#2a2c38';
-      ctx.fillRect(cx + cardW - 16 - (m.max - l) * 16, cy + 12, 12, 8);
+      ctx.fillRect(cx + cardW - 12 - (m.max - l) * 11, cy + 9, 8, 6);
     }
 
-    ctx.fillStyle = '#8a8aa2'; ctx.font = '12px ui-monospace';
-    wrapText(m.blurb[Math.min(lvl, m.blurb.length - 1)], cx + 14, cy + 38, cardW - 28, 15);
+    ctx.fillStyle = '#8a8aa2'; ctx.font = '10.5px ui-monospace';
+    wrapText(m.blurb[Math.min(lvl, m.blurb.length - 1)], cx + 10, cy + 28, cardW - 20, 12);
 
-    ctx.font = 'bold 14px ui-monospace'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
-    if (maxed) { ctx.fillStyle = '#7aaa55'; ctx.fillText('MAXED', cx + cardW - 14, cy + cardH - 12); }
-    else { ctx.fillStyle = afford ? '#ffd44a' : '#6a6a4a'; ctx.fillText(`★ ${cost}`, cx + cardW - 14, cy + cardH - 12); }
+    ctx.font = 'bold 13px ui-monospace'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+    if (maxed) { ctx.fillStyle = '#7aaa55'; ctx.fillText('MAXED', cx + cardW - 10, cy + cardH - 8); }
+    else { ctx.fillStyle = afford ? '#ffd44a' : '#6a6a4a'; ctx.fillText(`★ ${cost}`, cx + cardW - 10, cy + cardH - 8); }
 
     if (!maxed) buttons.push({ x: cx, y: cy, w: cardW, h: cardH, fn: () => buyMeta(m) });
   });
 
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#6a6a82'; ctx.font = '12px ui-monospace';
-  ctx.fillText('click an item or press its number  ·  perks apply to your NEXT run', W / 2, H - 92);
-  drawButton('◂  BACK', W / 2 - 110, H - 72, 220, 44, () => { menu = null; }, true);
+  ctx.fillText('click a perk (or press 1–9)  ·  perks apply to your NEXT run', W / 2, H - 88);
+  drawButton('◂  BACK', W / 2 - 110, H - 68, 220, 44, () => { menu = null; }, true);
 }
 
 // ── shop ──
