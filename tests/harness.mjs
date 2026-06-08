@@ -21,7 +21,7 @@ const SHIM = `
   get shop(){return shop}, set shop(v){shop=v},
   CFG, META, UPGRADES, MODIFIERS, SPECIALS, SPIDER_Y, FUSE_COST, keys,
   newRun, startShift, endShift, update, mods, maxStrikes, combineFx,
-  spawnPassenger, buyUpgrade, buyFuse, buyMeta, buySpecial, openShop, loadSave, persist,
+  spawnPassenger, buyUpgrade, buyFuse, buyMeta, buySpecial, openShop, rerollShop, dealHand, loadSave, persist,
   nearestFloorIdx, isAligned, doorsOpen, ridersAboard, slotsAboard, capacityNow, enterSpider,
 };
 `;

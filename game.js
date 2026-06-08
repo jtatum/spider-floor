@@ -27,11 +27,11 @@ const CFG = {
   settleFriction: 0.82,   // gentle extra drag only at a crawl, so a careful stop is possible
   settleBelow: 9,         // speed under which settleFriction kicks in (px/s)
   doorTime: 0.55,
-  patienceTime: 26,       // waiting patience (seconds)
-  ridePatience: 22,       // patience once aboard
-  alignTolerance: 17,
+  patienceTime: 22,       // waiting patience (seconds)
+  ridePatience: 18,       // patience once aboard
+  alignTolerance: 16,
   stopSpeed: 22,
-  rememberTime: 3.2,      // seconds a rider's floor stays "remembered"
+  rememberTime: 2.8,      // seconds a rider's floor stays "remembered"
   strikesAllowed: 3,
 };
 
@@ -72,27 +72,73 @@ function generateBuilding() {
   return b;
 }
 
-// Upgrades — the relief arc. Each removes a specific pain point.
+// Upgrades — the relief arc. Each removes a pain point. There are dozens, but
+// the shop only ever offers a random HAND of them, so every run you commit to a
+// build. `tag` groups them (and colours the card).
 const UPGRADES = [
-  { key: 'autoLevel',   name: 'Auto-Leveling',  max: 1, costs: [9],
+  // ── motion / control ──
+  { key: 'motor',     name: 'Rebuilt Motor',  tag: 'move', max: 3, costs: [4, 6, 9],
+    blurb: ['More top speed and quicker pickup.', 'Even more top speed.', 'A genuinely fast lift.'] },
+  { key: 'brakes',    name: 'Regen Brakes',   tag: 'move', max: 2, costs: [5, 8],
+    blurb: ['Far stronger braking — overshoot less.', 'Slam to a halt almost on a dime.'] },
+  { key: 'autoLevel', name: 'Auto-Leveling',  tag: 'move', max: 1, costs: [9],
     blurb: ['The car eases itself onto the floor when you stop nearby.'] },
-  { key: 'dispatch',    name: 'Dispatch Board',  max: 1, costs: [8],
-    blurb: ["Riders' floors stay posted. Stop trying to remember."] },
-  { key: 'floorCounter',name: 'Floor Counter',   max: 2, costs: [5, 7],
-    blurb: ['A cabin readout shows your floor — when nearly stopped.',
-            'The readout keeps up even at full speed.'] },
-  { key: 'fastDoors',   name: 'Quick Doors',     max: 2, costs: [4, 6],
+  { key: 'damper',    name: 'Flywheel Damper',tag: 'move', max: 2, costs: [4, 6],
+    blurb: ['Bleeds off momentum — the car coasts less.', 'Coasts much less; far easier to stop.'] },
+  { key: 'precision', name: 'Precision Crank', tag: 'move', max: 2, costs: [4, 6],
+    blurb: ['A wider margin counts as "aligned".', 'A generous margin — sloppy stops still open.'] },
+  // ── doors ──
+  { key: 'fastDoors', name: 'Quick Doors',    tag: 'door', max: 2, costs: [4, 6],
     blurb: ['Doors cycle 35% faster.', 'Doors cycle 60% faster.'] },
-  { key: 'motor',       name: 'Rebuilt Motor',   max: 2, costs: [5, 7],
-    blurb: ['More top speed and quicker pickup.', 'Even more top speed.'] },
-  { key: 'brakes',      name: 'Regen Brakes',    max: 1, costs: [5],
-    blurb: ['Far stronger braking. Overshoot less.'] },
-  { key: 'cushions',    name: 'Plush Cabin',     max: 2, costs: [4, 6],
-    blurb: ['Passengers wait longer before fuming.',
-            'Passengers are downright patient.'] },
-  { key: 'capacity',    name: 'Bigger Cabin',    max: 2, costs: [6, 8],
-    blurb: ['Carry one more passenger.', 'Carry two more passengers.'] },
+  { key: 'autoDoors', name: 'Auto Doors',     tag: 'door', max: 1, costs: [8],
+    blurb: ['Doors open themselves when you stop at a floor that needs you.'] },
+  { key: 'interlock', name: 'Door Interlock', tag: 'door', max: 1, costs: [5],
+    blurb: ['Fumbling the doors mid-travel no longer jams the car.'] },
+  // ── memory / info ──
+  { key: 'floorCounter', name: 'Floor Counter', tag: 'info', max: 2, costs: [5, 7],
+    blurb: ['A cabin readout shows your floor — when nearly stopped.', 'The readout keeps up even at full speed.'] },
+  { key: 'dispatch',  name: 'Dispatch Board', tag: 'info', max: 1, costs: [9],
+    blurb: ["Riders' floors stay posted. Stop trying to remember."] },
+  { key: 'arrows',    name: 'Guidance Arrows', tag: 'info', max: 1, costs: [6],
+    blurb: ['An arrow points the way to your nearest rider\'s floor.'] },
+  { key: 'chime',     name: 'Proximity Chime', tag: 'info', max: 1, costs: [5],
+    blurb: ['A chime sounds as you near a floor someone aboard wants.'] },
+  // ── cabin / cargo ──
+  { key: 'capacity',  name: 'Bigger Cabin',   tag: 'cargo', max: 3, costs: [5, 7, 9],
+    blurb: ['Carry one more passenger.', 'Carry two more.', 'Carry three more.'] },
+  { key: 'tipjar',    name: 'Tip Jar',        tag: 'cargo', max: 2, costs: [5, 8],
+    blurb: ['Every fare pays +1 ◆.', 'Every fare pays +2 ◆.'] },
+  { key: 'surge',     name: 'Surge Pricing',  tag: 'cargo', max: 2, costs: [5, 7],
+    blurb: ['Fares pay extra when the lobby is packed.', 'Even more when it\'s packed.'] },
+  // ── patience / calm ──
+  { key: 'cushions',  name: 'Plush Cabin',    tag: 'calm', max: 3, costs: [4, 6, 8],
+    blurb: ['Everyone is more patient.', 'Markedly more patient.', 'Downright serene.'] },
+  { key: 'muzak',     name: 'Cabin Muzak',    tag: 'calm', max: 2, costs: [4, 6],
+    blurb: ['Riders fume slower while aboard.', 'Riders barely mind a detour.'] },
+  { key: 'coffee',    name: 'Lobby Coffee',   tag: 'calm', max: 2, costs: [4, 6],
+    blurb: ['The waiting crowd is more patient.', 'The lobby is downright relaxed.'] },
+  { key: 'apology',   name: 'Apology Notes',  tag: 'calm', max: 1, costs: [6],
+    blurb: ['Your first walk-off each shift is forgiven.'] },
+  // ── luck / power ──
+  { key: 'lucky',     name: 'Lucky Cabin',    tag: 'luck', max: 2, costs: [5, 7],
+    blurb: ['VIP passengers turn up more often.', 'VIPs turn up much more often.'] },
+  { key: 'powercell', name: 'Power Cell',     tag: 'luck', max: 2, costs: [5, 7],
+    blurb: ['Power-ups last 40% longer.', 'Power-ups last 80% longer.'] },
+  // ── defense ──
+  { key: 'fusebox',   name: 'Fuse Box',       tag: 'guard', max: 2, costs: [6, 9],
+    blurb: ['Start each shift holding a Spare Fuse.', 'Start each shift holding two.'] },
+  { key: 'reinforced',name: 'Reinforced Car', tag: 'guard', max: 1, costs: [10],
+    blurb: ['One extra strike before you\'re fired (this run).'] },
 ];
+const UP_TAGS = {
+  move:  { name: 'MOTION',   color: '#6ab8ff' },
+  door:  { name: 'DOORS',    color: '#7adf9a' },
+  info:  { name: 'MEMORY',   color: '#d8b24a' },
+  cargo: { name: 'CARGO',    color: '#e0904a' },
+  calm:  { name: 'PATIENCE', color: '#9adf7a' },
+  luck:  { name: 'FORTUNE',  color: '#d88aff' },
+  guard: { name: 'DEFENSE',  color: '#e0584a' },
+};
 
 // Shift modifiers — rolled conditions that reshape a shift. The roguelike spice:
 // no two shifts (and no two runs) play the same. `tone` colours the banner.
@@ -210,19 +256,22 @@ function loadSave() {
 function persist() { try { localStorage.setItem('worstElevatorSave', JSON.stringify(save)); } catch (e) {} }
 let save = loadSave();
 
-function maxStrikes() { return CFG.strikesAllowed + save.meta.unionCard + ((game && game.extraStrike) || 0); }
+function maxStrikes() {
+  return CFG.strikesAllowed + save.meta.unionCard + ((run && run.up.reinforced) || 0) + ((game && game.extraStrike) || 0);
+}
 
 function newRun() {
   const meta = save.meta;
-  const up = { autoLevel: 0, dispatch: 0, floorCounter: 0, fastDoors: 0,
-               motor: 0, brakes: 0, cushions: 0, capacity: 0 };
+  const up = {};
+  for (const u of UPGRADES) up[u.key] = 0;
   // "Foot in the Door" pre-fits relief upgrades so the early grind is shorter
   if (meta.footInDoor >= 1) up.floorCounter = 1;
   if (meta.footInDoor >= 2) up.fastDoors = 1;
   if (meta.footInDoor >= 3) up.autoLevel = 1;
   return {
     up,
-    parts: [0, 5, 10, 15][meta.severance],
+    parts: [0, 5, 10, 15, 20][meta.severance] ?? 0,
+    rerolls: 0,
     shiftNum: 0,
     totalDelivered: 0,
     fuses: 0,          // consumable: each forgives one walk-off
@@ -233,29 +282,43 @@ function newRun() {
   };
 }
 
-// Effective stats given current upgrades.
+// Effective stats given current upgrades + meta perks. Computed once per shift.
 function mods() {
   const u = run.up;
+  const L = (k) => u[k] || 0;
+  const cushion = [1, 1.25, 1.45, 1.6][L('cushions')];
   return {
-    maxSpeed:   CFG.maxSpeed   * [1, 1.28, 1.55][u.motor],
-    accel:      CFG.accel      * [1, 1.20, 1.40][u.motor],
-    brakeAccel: CFG.brakeAccel * [1, 1.85][u.brakes],
-    doorTime:   CFG.doorTime   * [1, 0.65, 0.40][u.fastDoors],
-    patience:   CFG.patienceTime * [1, 1.30, 1.60][u.cushions],
-    ridePat:    CFG.ridePatience * [1, 1.30, 1.60][u.cushions],
-    capacity:   CFG.capacity + [0, 1, 2][u.capacity] + [0, 1, 2][save.meta.roomierStart],
-    autoLevel:  u.autoLevel >= 1,
-    floorCounter: u.floorCounter,   // 0,1,2
-    dispatch:   u.dispatch >= 1,
+    maxSpeed:   CFG.maxSpeed   * [1, 1.22, 1.40, 1.55][L('motor')],
+    accel:      CFG.accel      * [1, 1.18, 1.32, 1.45][L('motor')],
+    brakeAccel: CFG.brakeAccel * [1, 1.6, 2.1][L('brakes')],
+    doorTime:   CFG.doorTime   * [1, 0.65, 0.42][L('fastDoors')] * (save.meta.greaseMonkey ? 0.8 : 1),
+    coastFriction: CFG.coastFriction - [0, 0.004, 0.008][L('damper')],
+    alignTol:   CFG.alignTolerance + [0, 4, 8][L('precision')],
+    patience:   CFG.patienceTime * cushion * [1, 1.25, 1.5][L('coffee')],
+    ridePat:    CFG.ridePatience * cushion * [1, 1.25, 1.5][L('muzak')],
+    capacity:   CFG.capacity + [0, 1, 2, 3][L('capacity')] + [0, 1, 2][save.meta.roomierStart],
+    autoLevel:  L('autoLevel') >= 1,
+    autoDoors:  L('autoDoors') >= 1,
+    interlock:  L('interlock') >= 1,
+    floorCounter: L('floorCounter'),   // 0,1,2
+    dispatch:   L('dispatch') >= 1,
+    arrows:     L('arrows') >= 1,
+    chime:      L('chime') >= 1,
+    fareBonus:  [0, 1, 2][L('tipjar')] + save.meta.frequentFlyer,
+    surge:      L('surge'),
+    apology:    L('apology') >= 1,
+    vipRate:    [1, 1.5, 2][L('lucky')] * (1 + 0.6 * save.meta.reputation),
+    powerDur:   [1, 1.4, 1.8][L('powercell')],
   };
 }
 
-// Shift parameters scale with shift number.
+// Shift parameters scale with shift number. Tuned to bite sooner — the draft
+// shop also denies the full relief suite, so you can't trivialise late shifts.
 function shiftParams(n) {
-  const floors = Math.min(MAX_FLOORS, 5 + Math.floor(n / 2)); // 5 → 12
-  const quota  = 5 + n * 2;
-  const spawn  = Math.max(2.0, 5.0 - n * 0.35);   // seconds between arrivals
-  const patMul = Math.max(0.6, 1 - n * 0.05);     // patience squeeze
+  const floors = Math.min(MAX_FLOORS, 5 + Math.floor((n + 1) / 2)); // 5 → 12, grows a touch sooner
+  const quota  = 6 + Math.floor(n * 2.2);
+  const spawn  = Math.max(1.5, 4.6 - n * 0.34);   // seconds between arrivals
+  const patMul = Math.max(0.5, 1 - n * 0.06);     // patience squeeze
   return { floors, quota, spawn, patMul };
 }
 
@@ -298,8 +361,13 @@ function startShift() {
               cooldown: (9 + Math.random() * 9) * (1 - 0.25 * save.meta.knownAssociate) * fx.spiderMul,
               window: 0, glow: 0 },
     spiderGame: null,
+    apologyUsed: false,
     m,
   };
+
+  // Fuse Box: top up to the guaranteed number of fuses at the start of each shift
+  const guaranteedFuses = [0, 1, 2][run.up.fusebox || 0];
+  if (run.fuses < guaranteedFuses) run.fuses = guaranteedFuses;
 
   // consume one-shot "special" effects primed in the shop last visit
   const ns = run.nextShift || {};
@@ -327,7 +395,7 @@ const POWERS = {
 function grantPower() {
   const keys = Object.keys(POWERS);
   const k = keys[Math.floor(Math.random() * keys.length)];
-  game.power[k] = POWERS[k].dur;
+  game.power[k] = POWERS[k].dur * (game.m.powerDur || 1);   // Power Cell extends duration
   game.banner = { text: `★ ${POWERS[k].name} ★`, t: 1.6, color: POWERS[k].color };
   sfx.power();
 }
@@ -393,13 +461,14 @@ function handleKey(k) {
   }
   if (st === 'SHOP') {
     if (k === 'enter') { startShift(); return; }
-    if (k >= '1' && k <= '8') {
+    if (k >= '1' && k <= '9') {
       const i = parseInt(k, 10) - 1;
-      if (i < UPGRADES.length) buyUpgrade(UPGRADES[i]);
+      if (i < shop.hand.length) buyUpgrade(shop.hand[i]);
     }
-    if (k === '9') buyFuse();
-    if (k === '0') buySpecial(shop.offers[0]);
-    if (k === '-') buySpecial(shop.offers[1]);
+    if (k === 'f') buyFuse();
+    if (k === 'z') buySpecial(shop.offers[0]);
+    if (k === 'x') buySpecial(shop.offers[1]);
+    if (k === 'r') rerollShop();
     return;
   }
   if (st === 'PLAYING') {
@@ -410,9 +479,10 @@ function handleKey(k) {
 
 function toggleDoors() {
   const e = game.elev;
-  if (Math.abs(e.v) > CFG.stopSpeed) { jam(); return; }
+  // Door Interlock: fumbling mid-travel is simply ignored instead of jamming
+  if (Math.abs(e.v) > CFG.stopSpeed) { if (game.m.interlock) return; jam(); return; }
   if (e.doorTarget === 0) {
-    if (!isAligned()) { jam(); return; }
+    if (!isAligned()) { if (game.m.interlock) return; jam(); return; }
     e.doorTarget = 1;
     sfx.door();
   } else {
@@ -446,10 +516,11 @@ function nearestFloorIdx(y) {
   return Math.max(0, Math.min(activeMaxIdx(), Math.round(y / CFG.floorHeight)));
 }
 function isAligned() {
+  const tol = (game.m && game.m.alignTol) || CFG.alignTolerance;
   if (game.spider && game.spider.open &&
-      Math.abs(game.elev.y - SPIDER_Y) < CFG.alignTolerance) return true;
+      Math.abs(game.elev.y - SPIDER_Y) < tol) return true;
   const i = nearestFloorIdx(game.elev.y);
-  return Math.abs(game.elev.y - i * CFG.floorHeight) < CFG.alignTolerance;
+  return Math.abs(game.elev.y - i * CFG.floorHeight) < tol;
 }
 function isStopped() { return Math.abs(game.elev.v) < CFG.stopSpeed; }
 function doorsOpen() { return game.elev.doors > 0.92; }
@@ -500,11 +571,10 @@ function spawnPassenger() {
     dest = 1 + Math.floor(Math.random() * top);
   }
 
-  // pick a kind by weight (modifiers tilt the odds)
-  const rep = 1 + 0.6 * save.meta.reputation;
+  // pick a kind by weight (modifiers + Lucky Cabin tilt the odds)
   const weights = {
     normal:  10,
-    vip:     2.6 * rep * fx.vipMul,
+    vip:     2.6 * game.m.vipRate * fx.vipMul,
     nervous: 1.4 * fx.nervousMul,
     tipper:  1.2 * fx.tipperMul,
     mover:   1.0 * fx.moverMul,
@@ -590,7 +660,8 @@ function update(dt) {
   } else {
     // no input: a heavy flywheel. Barely any drag, so momentum carries you —
     // letting go does NOT stop you. "SLIPPERY CABLES" makes it glide even more.
-    const coastF = CFG.coastFriction + (0.9994 - CFG.coastFriction) * game.fx.coast;
+    const baseCoast = game.m.coastFriction;   // Flywheel Damper lowers this (more drag)
+    const coastF = baseCoast + (0.9994 - baseCoast) * game.fx.coast;
     e.v *= Math.pow(coastF, dt * 60);
     if (Math.abs(e.v) < CFG.settleBelow) e.v *= Math.pow(CFG.settleFriction, dt * 60);
     if (Math.abs(e.v) < 0.6) e.v = 0;
@@ -625,6 +696,15 @@ function update(dt) {
   if (ready && !e.wasReady) sfx.ding();
   e.wasReady = ready;
 
+  // Proximity Chime: a soft tick as you approach a floor someone aboard wants
+  game.chimeCool = Math.max(0, (game.chimeCool || 0) - dt);
+  if (m.chime && Math.abs(e.v) > CFG.stopSpeed) {
+    let near = Infinity;
+    for (const p of game.passengers)
+      if (p.state === 'riding') near = Math.min(near, Math.abs(e.y - p.dest * CFG.floorHeight));
+    if (near < 34 && game.chimeCool <= 0) { sfx.near(); game.chimeCool = 0.45; }
+  }
+
   // step off into the Spider Floor: park at the webbed depth and open up
   if (sp.open && Math.abs(e.y - SPIDER_Y) < CFG.alignTolerance && isStopped() && doorsOpen()) {
     enterSpider(); return;
@@ -644,6 +724,13 @@ function update(dt) {
   const open = doorsOpen();
   const cap = capacityNow();
 
+  // Auto Doors: open themselves when you stop at a floor that needs you
+  if (m.autoDoors && aligned && isStopped() && e.doorTarget === 0) {
+    const wantsHere = game.passengers.some(p => p.state === 'riding' && p.dest === ci);
+    const lobbyJob = ci === 0 && slotsAboard() < cap && game.passengers.some(p => p.state === 'waiting');
+    if (wantsHere || lobbyJob) { e.doorTarget = 1; sfx.door(); }
+  }
+
   // board: at lobby, aligned, open, with room — FIFO by arrival (movers take 2 slots)
   if (ci === 0 && aligned && open) {
     const waiting = game.passengers.filter(p => p.state === 'waiting');
@@ -651,6 +738,9 @@ function update(dt) {
       if (slotsAboard() + p.size > cap) continue;   // won't fit — skip, try the next
       p.state = 'riding';
       p.reveal = CFG.rememberTime;
+      // patience resets to the (often kinder) ride pool when they board
+      p.patience = game.m.ridePat * game.patMul * (p.kind === 'nervous' ? 0.6 : 1);
+      p.patienceMax = p.patience;
       sfx.board();
     }
   }
@@ -668,8 +758,9 @@ function update(dt) {
         p.removeAt = game.t + 0.45;
         game.delivered++;
         run.totalDelivered++;
-        let fare = Math.round(((game.power.double > 0 ? 2 : 1) + save.meta.frequentFlyer) * game.fx.fareMul);
+        let fare = Math.round(((game.power.double > 0 ? 2 : 1) + game.m.fareBonus) * game.fx.fareMul);
         if (p.kind === 'tipper') fare += 2;            // big tippers pad the fare
+        if (game.m.surge && lobbyWaiting >= 4) fare += game.m.surge;   // Surge Pricing
         fare = Math.max(1, fare);
         run.parts += fare;
         game.partsThisShift += fare;
@@ -696,6 +787,15 @@ function update(dt) {
 function losePassenger(p) {
   p.state = 'left';
   p.removeAt = game.t + 0.7;
+  if (game.m.apology && !game.apologyUsed) {   // Apology Notes: first walk-off each shift is free
+    game.apologyUsed = true;
+    flash('#9adf7a', 0.3);
+    shake(4);
+    floatText('APOLOGISED', '#9adf7a');
+    sfx.buzz();
+    game.banner = { text: 'WALK-OFF SMOOTHED OVER — APOLOGY NOTE', t: 1.4, color: '#9adf7a' };
+    return;
+  }
   if (run.fuses > 0) {           // a Spare Fuse eats the strike
     run.fuses--;
     flash('#d4a050', 0.3);
@@ -802,9 +902,26 @@ const SPECIALS = [
     apply() { run.nextShift.brakeBoost = 1.7; } },
 ];
 
+// deal a fresh hand of upgrade choices (non-maxed only)
+function dealHand() {
+  const avail = UPGRADES.filter(u => run.up[u.key] < u.max);
+  const size = Math.min(avail.length, 4 + (save.meta.bigShop || 0));
+  return shuffle(avail).slice(0, size);
+}
 function openShop() {
-  shop = { offers: shuffle(SPECIALS).slice(0, 2), bought: {} };
+  run.rerolls = save.meta.rerollToken || 0;   // free rerolls granted by the Workshop
+  shop = { hand: dealHand(), offers: shuffle(SPECIALS).slice(0, 2), bought: {} };
   game.state = 'SHOP';
+}
+const REROLL_COST = 3;
+function rerollShop() {
+  if (run.rerolls > 0) run.rerolls--;
+  else if (run.parts >= REROLL_COST) run.parts -= REROLL_COST;
+  else { sfx.buzz(); return; }
+  shop.hand = dealHand();
+  shop.offers = shuffle(SPECIALS).slice(0, 2);
+  shop.bought = {};
+  sfx.buy();
 }
 function buySpecial(s) {
   if (!s || (shop.bought && shop.bought[s.key])) { sfx.buzz(); return; }
@@ -1322,6 +1439,25 @@ function drawCar() {
   ctx.beginPath(); ctx.arc(left + w - 12, top + 12, 4, 0, 7); ctx.fill();
   ctx.strokeStyle = '#bfa45f'; ctx.lineWidth = 2;
   ctx.strokeRect(left + 0.5, top + 0.5, w - 1, h - 1);
+
+  // Guidance Arrows: point toward the nearest floor a rider wants
+  if (m.arrows) {
+    let best = null, bestD = Infinity;
+    for (const p of game.passengers) if (p.state === 'riding') {
+      const d = p.dest * CFG.floorHeight - game.elev.y;
+      if (Math.abs(d) < bestD) { bestD = Math.abs(d); best = d; }
+    }
+    if (best !== null && bestD > 6) {
+      const up = best > 0;
+      const ay = up ? top - 14 : top + h + 14;
+      const pulse = 0.5 + 0.5 * Math.sin(game.t * 6);
+      ctx.fillStyle = `rgba(106,184,255,${0.5 + 0.5 * pulse})`;
+      ctx.beginPath();
+      if (up) { ctx.moveTo(cx - 11, ay + 7); ctx.lineTo(cx + 11, ay + 7); ctx.lineTo(cx, ay - 7); }
+      else    { ctx.moveTo(cx - 11, ay - 7); ctx.lineTo(cx + 11, ay - 7); ctx.lineTo(cx, ay + 7); }
+      ctx.closePath(); ctx.fill();
+    }
+  }
 }
 
 function drawPassenger(p, x, footY, mode) {
@@ -1788,62 +1924,69 @@ function drawWorkshop() {
 function drawShop() {
   ctx.fillStyle = '#0d0a08'; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#bfa45f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.font = 'bold 34px ui-monospace';
-  ctx.fillText('THE PARTS SHOP', W / 2, 56);
-  ctx.font = '14px ui-monospace'; ctx.fillStyle = '#7a6a4a';
-  ctx.fillText('turn the death-trap into a dream machine', W / 2, 84);
+  ctx.font = 'bold 32px ui-monospace';
+  ctx.fillText('THE PARTS SHOP', W / 2, 46);
+  ctx.font = '13px ui-monospace'; ctx.fillStyle = '#7a6a4a';
+  ctx.fillText('pick your build — only these parts are in stock today', W / 2, 72);
   ctx.fillStyle = '#d4a050'; ctx.font = 'bold 20px ui-monospace';
-  ctx.fillText(`◆ ${run.parts} parts`, W / 2, 116);
+  ctx.fillText(`◆ ${run.parts} parts`, W / 2, 100);
 
-  const cols = 2, cardW = 380, cardH = 84, gapX = 24, gapY = 12;
+  // ── the drafted hand of upgrade choices ──
+  const cols = 2, cardW = 380, cardH = 80, gapX = 24, gapY = 12;
   const totalW = cols * cardW + (cols - 1) * gapX;
-  const x0 = (W - totalW) / 2, y0 = 144;
-  UPGRADES.forEach((u, i) => {
+  const x0 = (W - totalW) / 2, y0 = 128;
+  const rows = Math.ceil(shop.hand.length / cols);
+  shop.hand.forEach((u, i) => {
     const cx = x0 + (i % cols) * (cardW + gapX);
     const cy = y0 + Math.floor(i / cols) * (cardH + gapY);
     const lvl = run.up[u.key];
     const maxed = lvl >= u.max;
     const cost = maxed ? null : u.costs[lvl];
     const afford = !maxed && run.parts >= cost;
+    const tag = UP_TAGS[u.tag] || { name: '', color: '#bfa45f' };
 
-    ctx.fillStyle = '#1a130d';
-    ctx.fillRect(cx, cy, cardW, cardH);
+    ctx.fillStyle = '#1a130d'; ctx.fillRect(cx, cy, cardW, cardH);
+    ctx.fillStyle = tag.color; ctx.globalAlpha = 0.10; ctx.fillRect(cx, cy, 5, cardH); ctx.globalAlpha = 1;
+    ctx.fillStyle = tag.color; ctx.fillRect(cx, cy, 5, cardH);
     ctx.strokeStyle = maxed ? '#3a5a2a' : afford ? '#bfa45f' : '#3a2e22';
     ctx.lineWidth = 2; ctx.strokeRect(cx, cy, cardW, cardH);
 
-    // index key
     ctx.fillStyle = afford ? '#d4a050' : '#5a4a32';
     ctx.font = 'bold 15px ui-monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    ctx.fillText(`${i + 1}`, cx + 12, cy + 12);
-
+    ctx.fillText(`${i + 1}`, cx + 14, cy + 11);
     ctx.fillStyle = '#bfa45f'; ctx.font = 'bold 16px ui-monospace';
-    ctx.fillText(u.name, cx + 34, cy + 11);
+    ctx.fillText(u.name, cx + 34, cy + 10);
+    ctx.fillStyle = tag.color; ctx.font = '9px ui-monospace';
+    ctx.fillText(tag.name, cx + 34, cy + 28);
 
-    // level pips
     for (let l = 0; l < u.max; l++) {
       ctx.fillStyle = l < lvl ? '#7aaa55' : '#3a2e22';
-      ctx.fillRect(cx + cardW - 16 - (u.max - l) * 16, cy + 12, 12, 8);
+      ctx.fillRect(cx + cardW - 16 - (u.max - l) * 14, cy + 11, 10, 7);
     }
-
     ctx.fillStyle = '#9a8a64'; ctx.font = '12px ui-monospace';
-    const blurb = u.blurb[Math.min(lvl, u.blurb.length - 1)];
-    wrapText(blurb, cx + 14, cy + 38, cardW - 28, 15);
+    wrapText(u.blurb[Math.min(lvl, u.blurb.length - 1)], cx + 34, cy + 42, cardW - 48, 14);
 
     ctx.font = 'bold 14px ui-monospace'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
-    if (maxed) { ctx.fillStyle = '#7aaa55'; ctx.fillText('MAXED', cx + cardW - 14, cy + cardH - 12); }
-    else { ctx.fillStyle = afford ? '#d4a050' : '#7a5a3a'; ctx.fillText(`◆ ${cost}`, cx + cardW - 14, cy + cardH - 12); }
-
+    if (maxed) { ctx.fillStyle = '#7aaa55'; ctx.fillText('MAXED', cx + cardW - 12, cy + cardH - 10); }
+    else { ctx.fillStyle = afford ? '#d4a050' : '#7a5a3a'; ctx.fillText(`◆ ${cost}`, cx + cardW - 12, cy + cardH - 10); }
     if (!maxed) buttons.push({ x: cx, y: cy, w: cardW, h: cardH, fn: () => buyUpgrade(u) });
   });
 
-  // the rotating shelf: Spare Fuse + two "specials" that change every visit
-  const shelfY = y0 + 4 * (cardH + gapY) + 10;
-  const itemGap = 12, itemW = (totalW - 2 * itemGap) / 3, itemH = 60;
+  // reroll the hand
+  const rrY = y0 + rows * (cardH + gapY) - 2;
+  const rrFree = run.rerolls > 0;
+  ctx.textAlign = 'center';
+  drawButton(rrFree ? `↻ REROLL  (free ×${run.rerolls})` : `↻ REROLL  (◆${REROLL_COST})`,
+             W / 2 - 130, rrY, 260, 34, rerollShop, false);
+
+  // ── the rotating shelf: Spare Fuse + two one-shot specials ──
+  const shelfY = rrY + 46;
+  const itemGap = 12, itemW = (totalW - 2 * itemGap) / 3, itemH = 58;
   ctx.fillStyle = '#6a6a4a'; ctx.font = '11px ui-monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-  ctx.fillText("TODAY'S SHELF — one-shot extras, restocked each visit", x0, shelfY - 4);
+  ctx.fillText("ONE-SHOT EXTRAS", x0, shelfY - 4);
   const shelf = [
-    { key: '9', name: 'Spare Fuse', cost: FUSE_COST, blurb: `Forgive one walk-off. Carrying ${run.fuses}.`, fn: buyFuse, bought: false },
-    ...shop.offers.map((s, i) => ({ key: i === 0 ? '0' : '-', name: s.name, cost: s.cost, blurb: s.blurb,
+    { key: 'F', name: 'Spare Fuse', cost: FUSE_COST, blurb: `Forgive one walk-off. Carrying ${run.fuses}.`, fn: buyFuse, bought: false },
+    ...shop.offers.map((s, i) => ({ key: i === 0 ? 'Z' : 'X', name: s.name, cost: s.cost, blurb: s.blurb,
                                     fn: () => buySpecial(s), bought: !!(shop.bought && shop.bought[s.key]) })),
   ];
   shelf.forEach((it, i) => {
@@ -1852,10 +1995,10 @@ function drawShop() {
     ctx.fillStyle = '#170f14'; ctx.fillRect(ix, shelfY, itemW, itemH);
     ctx.strokeStyle = it.bought ? '#3a5a2a' : afford ? '#d4a050' : '#3a2e22'; ctx.lineWidth = 2;
     ctx.strokeRect(ix, shelfY, itemW, itemH);
-    ctx.fillStyle = afford ? '#d4a050' : '#5a4a32'; ctx.font = 'bold 13px ui-monospace';
-    ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(it.key, ix + 10, shelfY + 9);
-    ctx.fillStyle = '#d4a050'; ctx.font = 'bold 14px ui-monospace'; ctx.fillText(it.name, ix + 26, shelfY + 8);
-    ctx.fillStyle = '#9a8a64'; ctx.font = '11px ui-monospace'; wrapText(it.blurb, ix + 10, shelfY + 27, itemW - 20, 13);
+    ctx.fillStyle = afford ? '#d4a050' : '#5a4a32'; ctx.font = 'bold 12px ui-monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(it.key, ix + 10, shelfY + 8);
+    ctx.fillStyle = '#d4a050'; ctx.font = 'bold 14px ui-monospace'; ctx.fillText(it.name, ix + 26, shelfY + 7);
+    ctx.fillStyle = '#9a8a64'; ctx.font = '11px ui-monospace'; wrapText(it.blurb, ix + 10, shelfY + 26, itemW - 20, 13);
     ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.font = 'bold 13px ui-monospace';
     if (it.bought) { ctx.fillStyle = '#7aaa55'; ctx.fillText('SOLD', ix + itemW - 10, shelfY + itemH - 8); }
     else { ctx.fillStyle = afford ? '#d4a050' : '#7a5a3a'; ctx.fillText(`◆ ${it.cost}`, ix + itemW - 10, shelfY + itemH - 8); }
@@ -1864,10 +2007,10 @@ function drawShop() {
 
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#7a6a4a'; ctx.font = '12px ui-monospace';
-  ctx.fillText('click an item or press its number to buy', W / 2, H - 96);
+  ctx.fillText('click or press the key  ·  R reroll  ·  F fuse  ·  Z / X specials', W / 2, H - 92);
   const nextQ = shiftParams(run.shiftNum + 1).quota;
   drawButton(`START SHIFT ${run.shiftNum + 1}  (quota ${nextQ})  ▸`,
-             W / 2 - 170, H - 76, 340, 44, () => startShift(), true);
+             W / 2 - 170, H - 72, 340, 44, () => startShift(), true);
 }
 
 function wrapText(text, x, y, maxW, lh) {
@@ -1910,6 +2053,7 @@ const sfx = (() => {
   return {
     resume,
     ding()  { tone(880, 0.12, 'sine', 0.5); tone(1320, 0.16, 'sine', 0.3); },
+    near()  { tone(1040, 0.05, 'sine', 0.25); },
     board() { tone(440, 0.07, 'square', 0.35, 560); },
     chime() { tone(660, 0.09, 'sine', 0.5); tone(990, 0.14, 'sine', 0.4, 1180); },
     door()  { tone(160, 0.18, 'sawtooth', 0.25, 120); },

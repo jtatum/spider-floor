@@ -79,6 +79,8 @@ test('opening at the wrong floor delivers nobody', (G) => {
 test('a walk-off costs a strike; a Spare Fuse forgives the first', (G) => {
   G.run = G.newRun(); G.startShift();
   G.run.fuses = 1;
+  // shut the doors and leave the lobby so the waiting passenger can't board
+  const e = G.game.elev; e.doorTarget = 0; e.doors = 0; e.y = 2 * G.CFG.floorHeight;
   const impatient = () => { G.spawnPassenger(); const p = G.game.passengers.at(-1); p.state = 'waiting'; p.patience = 0.0001; };
   G.game.passengers = []; impatient(); G.step(2);
   assert.equal(G.game.strikes, 0, 'fuse absorbed it');
@@ -113,13 +115,14 @@ test('crank has momentum — releasing does not auto-stop', (G) => {
 test('buying an upgrade charges parts and caps at max level', (G) => {
   G.run = G.newRun(); G.startShift();
   G.run.parts = 100;
-  const u = G.UPGRADES.find(x => x.key === 'dispatch');   // max 1, cost 8
+  const u = G.UPGRADES.find(x => x.key === 'dispatch');   // max 1
+  const cost = u.costs[0];
   G.buyUpgrade(u);
   assert.equal(G.run.up.dispatch, 1);
-  assert.equal(G.run.parts, 92);
+  assert.equal(G.run.parts, 100 - cost);
   G.buyUpgrade(u);                                          // already maxed
   assert.equal(G.run.up.dispatch, 1, 'cannot exceed max');
-  assert.equal(G.run.parts, 92, 'no charge when maxed');
+  assert.equal(G.run.parts, 100 - cost, 'no charge when maxed');
 });
 
 // ── Spider Floor ─────────────────────────────────────────────────────────────
@@ -229,6 +232,38 @@ test('the shop offers two rotating specials', (G) => {
   G.openShop();
   assert.equal(G.shop.offers.length, 2);
   assert.notEqual(G.shop.offers[0].key, G.shop.offers[1].key, 'two distinct specials');
+});
+
+test('the shop deals a drafted hand of non-maxed upgrades', (G) => {
+  G.run = G.newRun(); G.startShift(); G.openShop();
+  assert.ok(G.shop.hand.length >= 3 && G.shop.hand.length <= 5, `hand size ${G.shop.hand.length}`);
+  assert.ok(G.shop.hand.every(u => G.run.up[u.key] < u.max), 'only offers improvable upgrades');
+});
+
+test('reroll deals a new hand and costs parts', (G) => {
+  G.run = G.newRun(); G.startShift(); G.run.parts = 20; G.run.rerolls = 0; G.openShop();
+  const before = G.run.parts;
+  G.rerollShop();
+  assert.equal(G.run.parts, before - 3, 'reroll costs 3 parts when no free rerolls');
+});
+
+test('Tip Jar adds to every fare; Reinforced adds a strike', (G) => {
+  G.run = G.newRun(); G.run.up.tipjar = 1; G.run.up.reinforced = 1; G.startShift();
+  assert.equal(G.maxStrikes(), G.CFG.strikesAllowed + 1, 'reinforced grants a strike');
+  G.game.passengers = []; const p = addRider(G, 2, 'normal');
+  openDoorsAt(G, 2); const before = G.run.parts; G.step(3);
+  assert.equal(G.run.parts - before, 2, 'base 1 + Tip Jar 1');
+});
+
+test('Apology Notes forgives the first walk-off, then strikes resume', (G) => {
+  G.run = G.newRun(); G.run.up.apology = 1; G.startShift();
+  const e = G.game.elev; e.doorTarget = 0; e.doors = 0; e.y = 2 * G.CFG.floorHeight;
+  const impatient = () => { G.spawnPassenger(); const p = G.game.passengers.at(-1); p.state = 'waiting'; p.patience = 0.0001; };
+  G.game.passengers = []; impatient(); G.step(2);
+  assert.equal(G.game.strikes, 0, 'first walk-off apologised away');
+  assert.ok(G.game.apologyUsed, 'apology spent');
+  impatient(); G.step(2);
+  assert.equal(G.game.strikes, 1, 'second walk-off strikes');
 });
 
 test('a special primes a one-shot effect for the next shift', (G) => {
