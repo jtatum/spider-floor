@@ -56,9 +56,16 @@ export function makeGame() {
     addEventListener: () => {}, removeEventListener: () => {},
     innerWidth: 1200, innerHeight: 900,
     AudioContext: undefined, webkitAudioContext: undefined,
+    matchMedia: () => ({ matches: false }),
   };
+  // a no-op DOM element so the touch-control setup runs harmlessly headless
+  const fakeEl = () => ({
+    className: '', id: '', textContent: '', dataset: {}, style: {},
+    classList: { add() {}, remove() {} },
+    addEventListener() {}, appendChild() {},
+  });
   const sandbox = {
-    document: { getElementById: () => canvas },
+    document: { getElementById: () => canvas, createElement: fakeEl, body: { appendChild() {} } },
     window: win,
     performance: { now: () => 0 },
     localStorage,
