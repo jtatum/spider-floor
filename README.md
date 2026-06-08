@@ -58,6 +58,14 @@ knobs live in `CFG` at the top of `src/data.js`.
 
 ## Deploy
 
-A GitHub Actions workflow (`.github/workflows/deploy.yml`) runs the tests and
-publishes to **GitHub Pages** on every push to `main`. One-time setup after you
-create the repo: **Settings → Pages → Source: GitHub Actions**.
+`npm run build` (`tools/build.mjs`, zero dependencies) concatenates the `src/`
+scripts into one **content-hashed** file (`dist/app.<hash>.js`) and rewrites
+`index.html` to point at it — so the published site can be cached aggressively
+and busts automatically the moment the code changes. There's no build for local
+dev; `tools/dev-server.mjs` just serves the plain `src/` files with no-cache
+headers.
+
+A GitHub Actions workflow (`.github/workflows/deploy.yml`) runs the tests, then
+builds and publishes `dist/` to **GitHub Pages** on every push to `main`.
+One-time setup after you create the repo: **Settings → Pages → Source: GitHub
+Actions**.

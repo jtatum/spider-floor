@@ -715,23 +715,41 @@ function drawTitleArt() {
 
   // ── a giant spider gripping the top, dangling the lift on a silk thread ──
   const sy = 40;                 // spider body
-  ctx.strokeStyle = '#160a12'; ctx.lineWidth = 4; ctx.lineCap = 'round';
-  for (let i = -1; i <= 1; i += 2) {
-    for (let l = 0; l < 4; l++) {
-      const knee = { x: cx + i * (16 + l * 7), y: sy - 12 - l * 3 };
-      const foot = { x: cx + i * (30 + l * 18), y: 9 + l * 2 + Math.sin(t * 2 + l) * 1.5 };  // grip the ceiling
-      ctx.beginPath(); ctx.moveTo(cx, sy); ctx.lineTo(knee.x, knee.y); ctx.lineTo(foot.x, foot.y); ctx.stroke();
+
+  // a soft glow so the dark silhouette separates from the near-black backdrop
+  const halo = ctx.createRadialGradient(cx, sy, 8, cx, sy, 96);
+  halo.addColorStop(0, 'rgba(120,40,70,0.34)'); halo.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = halo; ctx.fillRect(cx - 110, sy - 96, 220, 200);
+
+  // legs: a dark base stroke + a lighter rim on top so they read against the dark
+  ctx.lineCap = 'round';
+  for (let pass = 0; pass < 2; pass++) {
+    ctx.strokeStyle = pass === 0 ? '#0b0610' : '#6a566e';   // shadow, then highlight
+    ctx.lineWidth = pass === 0 ? 6 : 2.6;
+    for (let i = -1; i <= 1; i += 2) {
+      for (let l = 0; l < 4; l++) {
+        const knee = { x: cx + i * (16 + l * 7), y: sy - 12 - l * 3 };
+        const foot = { x: cx + i * (30 + l * 18), y: 9 + l * 2 + Math.sin(t * 2 + l) * 1.5 };
+        ctx.beginPath(); ctx.moveTo(cx, sy); ctx.lineTo(knee.x, knee.y); ctx.lineTo(foot.x, foot.y); ctx.stroke();
+      }
     }
   }
-  ctx.fillStyle = '#1c0e18';
+  // abdomen + head, lifted out of the dark with a fill, rim light and sheen
+  ctx.fillStyle = '#2a1a2e';
   ctx.beginPath(); ctx.ellipse(cx, sy + 6, 19, 23, 0, 0, 7); ctx.fill();   // abdomen
   ctx.beginPath(); ctx.arc(cx, sy - 12, 12, 0, 7); ctx.fill();             // head
-  ctx.fillStyle = '#7a1030';                                               // red hourglass
+  ctx.strokeStyle = '#6a4a72'; ctx.lineWidth = 1.5;                        // rim light
+  ctx.beginPath(); ctx.ellipse(cx, sy + 6, 19, 23, 0, 0, 7); ctx.stroke();
+  ctx.fillStyle = 'rgba(180,140,200,0.18)';                                // top sheen
+  ctx.beginPath(); ctx.ellipse(cx - 5, sy - 2, 7, 9, -0.4, 0, 7); ctx.fill();
+  ctx.fillStyle = '#b21838';                                               // red hourglass
   ctx.beginPath(); ctx.moveTo(cx - 6, sy - 2); ctx.lineTo(cx + 6, sy - 2);
   ctx.lineTo(cx - 6, sy + 14); ctx.lineTo(cx + 6, sy + 14); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = 'rgba(255,60,90,0.22)'; ctx.beginPath(); ctx.arc(cx, sy - 12, 17, 0, 7); ctx.fill();
-  ctx.fillStyle = '#ff3a5a';                                               // eyes
-  for (const [dx, dy] of [[-5, -14], [5, -14], [-2, -10], [2, -10]]) { ctx.beginPath(); ctx.arc(cx + dx, sy + dy, 2, 0, 7); ctx.fill(); }
+  ctx.fillStyle = 'rgba(255,60,90,0.3)'; ctx.beginPath(); ctx.arc(cx, sy - 12, 18, 0, 7); ctx.fill();
+  ctx.save(); ctx.shadowColor = '#ff3a5a'; ctx.shadowBlur = 6;             // glowing eyes
+  ctx.fillStyle = '#ff5a74';
+  for (const [dx, dy] of [[-5, -14], [5, -14], [-2, -10], [2, -10]]) { ctx.beginPath(); ctx.arc(cx + dx, sy + dy, 2.2, 0, 7); ctx.fill(); }
+  ctx.restore();
 
   // silk thread down to the bobbing elevator
   const ey = 108 + sway * 4, ex = cx + sway * 6;

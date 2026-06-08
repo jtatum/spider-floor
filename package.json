@@ -4,6 +4,8 @@
   "private": true,
   "description": "The Spider Floor — an elevator roguelike. Operate the worst lift in town; mind the spiders below.",
   "scripts": {
-    "test": "node tests/run.mjs"
+    "test": "node tests/run.mjs",
+    "build": "node tools/build.mjs",
+    "serve": "node tools/dev-server.mjs 8123"
   }
 }
