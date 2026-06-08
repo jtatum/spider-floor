@@ -25,3 +25,34 @@ canvas {
   opacity: 0.55;
   letter-spacing: 0.12em;
 }
+
+/* ── on-screen touch controls (phones) ── */
+#touch { display: none; }
+.tbtn {
+  position: fixed;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  width: 74px; height: 74px;
+  border-radius: 50%;
+  background: rgba(40, 32, 22, 0.5);
+  border: 2px solid rgba(191, 164, 95, 0.55);
+  color: #e8dcc0;
+  font: bold 28px ui-monospace, monospace;
+  align-items: center; justify-content: center;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-user-select: none; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  z-index: 20;
+}
+.tbtn.on { background: rgba(110, 84, 54, 0.85); border-color: #ffd44a; }
+.tbtn.tL { left: 16px; }
+.tbtn.tR { left: 100px; }
+.tbtn.tB { right: 16px; }
+.tbtn.tA {
+  right: 100px;
+  width: 104px; border-radius: 20px;
+  font-size: 16px; letter-spacing: 0.05em;
+}
+@media (max-height: 460px) {            /* landscape phones: lift buttons higher */
+  .tbtn { bottom: max(10px, env(safe-area-inset-bottom)); }
+}

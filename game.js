@@ -2378,13 +2378,14 @@ function loop(now) {
   lastT = now;
   update(dt);
   render();
+  if (touchEnabled) updateTouchUI();
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 
 // fit canvas to viewport while keeping internal resolution
 function fit() {
-  const pad = 24;
+  const pad = 16;
   const sw = (window.innerWidth - pad) / W;
   const shh = (window.innerHeight - pad) / H;
   const s = Math.min(sw, shh, 1.4);
@@ -2393,3 +2394,60 @@ function fit() {
 }
 window.addEventListener('resize', fit);
 fit();
+
+// ──────────────────────────────────────────────── touch controls (phones)
+// On-screen buttons that feed the same `keys` set / handleKey the keyboard does,
+// so all game logic is reused. Bindings swap by game state (lift vs. spider).
+let touchEnabled = false;
+const touchEls = {};
+function setupTouch() {
+  const wrap = document.createElement('div'); wrap.id = 'touch';
+  const mk = (id, cls) => { const b = document.createElement('div'); b.className = 'tbtn ' + cls; b.id = id; wrap.appendChild(b); return b; };
+  touchEls.L = mk('tL', 'tL'); touchEls.R = mk('tR', 'tR');
+  touchEls.A = mk('tA', 'tA'); touchEls.B = mk('tB', 'tB');
+  document.body.appendChild(wrap);
+  for (const el of Object.values(touchEls)) {
+    el.addEventListener('pointerdown', e => {
+      e.preventDefault(); sfx.resume();
+      const key = el.dataset.key; if (!key) return;
+      if (el.dataset.mode === 'tap') handleKey(key); else keys.add(key);
+      el.classList.add('on');
+    });
+    const release = e => { if (e) e.preventDefault(); const key = el.dataset.key; if (key) keys.delete(key); el.classList.remove('on'); };
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    el.addEventListener('pointerleave', release);
+  }
+}
+function updateTouchUI() {
+  if (!touchEnabled) return;
+  const st = menu || (game ? game.state : 'TITLE');
+  const set = (el, key, label, mode) => {
+    key = key || '';
+    if (el.dataset.key && el.dataset.key !== key) { keys.delete(el.dataset.key); el.classList.remove('on'); }
+    el.dataset.key = key; el.dataset.mode = mode || 'hold'; el.textContent = label;
+    el.style.display = key ? 'flex' : 'none';
+  };
+  if (st === 'PLAYING') {
+    set(touchEls.L, 'arrowup', '▲', 'hold');
+    set(touchEls.R, 'arrowdown', '▼', 'hold');
+    set(touchEls.A, ' ', 'DOORS', 'tap');
+    set(touchEls.B, '', '');
+  } else if (st === 'SPIDER') {
+    set(touchEls.L, 'arrowleft', '◀', 'hold');
+    set(touchEls.R, 'arrowright', '▶', 'hold');
+    set(touchEls.A, ' ', 'SWING', 'hold');
+    set(touchEls.B, 'arrowup', 'LIFT', 'hold');
+  } else {            // menus/title/shop: tap the canvas directly
+    set(touchEls.L, '', ''); set(touchEls.R, '', ''); set(touchEls.A, '', ''); set(touchEls.B, '', '');
+  }
+}
+function refreshTouchEnabled() {
+  touchEnabled = window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 760;
+  const wrap = document.getElementById('touch');
+  if (wrap) wrap.style.display = touchEnabled ? 'block' : 'none';
+  if (!touchEnabled) { for (const el of Object.values(touchEls)) { if (el.dataset.key) keys.delete(el.dataset.key); } }
+}
+setupTouch();
+refreshTouchEnabled();
+window.addEventListener('resize', refreshTouchEnabled);
