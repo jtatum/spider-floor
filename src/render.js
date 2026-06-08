@@ -28,6 +28,8 @@ function render() {
   else if (st === 'TITLE') drawTitle();
   else if (st === 'SHOP')  drawShop();
   else if (st === 'SPIDER') drawSpider();
+  else if (st === 'BOSS') drawBoss();
+  else if (st === 'VICTORY') drawVictory();
   else {
     drawBuilding();
     drawCar();
@@ -713,48 +715,53 @@ function drawTitleArt() {
   const cx = W / 2;
   const sway = Math.sin(t * 1.1);
 
-  // ── a giant spider gripping the top, dangling the lift on a silk thread ──
   const sy = 40;                 // spider body
-
-  // a soft glow so the dark silhouette separates from the near-black backdrop
-  const halo = ctx.createRadialGradient(cx, sy, 8, cx, sy, 96);
-  halo.addColorStop(0, 'rgba(120,40,70,0.34)'); halo.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = halo; ctx.fillRect(cx - 110, sy - 96, 220, 200);
-
-  // legs: a dark base stroke + a lighter rim on top so they read against the dark
-  ctx.lineCap = 'round';
-  for (let pass = 0; pass < 2; pass++) {
-    ctx.strokeStyle = pass === 0 ? '#0b0610' : '#6a566e';   // shadow, then highlight
-    ctx.lineWidth = pass === 0 ? 6 : 2.6;
-    for (let i = -1; i <= 1; i += 2) {
-      for (let l = 0; l < 4; l++) {
-        const knee = { x: cx + i * (16 + l * 7), y: sy - 12 - l * 3 };
-        const foot = { x: cx + i * (30 + l * 18), y: 9 + l * 2 + Math.sin(t * 2 + l) * 1.5 };
-        ctx.beginPath(); ctx.moveTo(cx, sy); ctx.lineTo(knee.x, knee.y); ctx.lineTo(foot.x, foot.y); ctx.stroke();
+  let threadColor = 'rgba(220,210,230,0.55)';
+  if (!save.beatBoss) {
+    // ── a giant spider gripping the top, dangling the lift on a silk thread ──
+    // a soft glow so the dark silhouette separates from the near-black backdrop
+    const halo = ctx.createRadialGradient(cx, sy, 8, cx, sy, 96);
+    halo.addColorStop(0, 'rgba(120,40,70,0.34)'); halo.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = halo; ctx.fillRect(cx - 110, sy - 96, 220, 200);
+    ctx.lineCap = 'round';
+    for (let pass = 0; pass < 2; pass++) {
+      ctx.strokeStyle = pass === 0 ? '#0b0610' : '#6a566e';
+      ctx.lineWidth = pass === 0 ? 6 : 2.6;
+      for (let i = -1; i <= 1; i += 2) {
+        for (let l = 0; l < 4; l++) {
+          const knee = { x: cx + i * (16 + l * 7), y: sy - 12 - l * 3 };
+          const foot = { x: cx + i * (30 + l * 18), y: 9 + l * 2 + Math.sin(t * 2 + l) * 1.5 };
+          ctx.beginPath(); ctx.moveTo(cx, sy); ctx.lineTo(knee.x, knee.y); ctx.lineTo(foot.x, foot.y); ctx.stroke();
+        }
       }
     }
+    ctx.fillStyle = '#2a1a2e';
+    ctx.beginPath(); ctx.ellipse(cx, sy + 6, 19, 23, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, sy - 12, 12, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#6a4a72'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.ellipse(cx, sy + 6, 19, 23, 0, 0, 7); ctx.stroke();
+    ctx.fillStyle = 'rgba(180,140,200,0.18)';
+    ctx.beginPath(); ctx.ellipse(cx - 5, sy - 2, 7, 9, -0.4, 0, 7); ctx.fill();
+    ctx.fillStyle = '#b21838';
+    ctx.beginPath(); ctx.moveTo(cx - 6, sy - 2); ctx.lineTo(cx + 6, sy - 2);
+    ctx.lineTo(cx - 6, sy + 14); ctx.lineTo(cx + 6, sy + 14); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,60,90,0.3)'; ctx.beginPath(); ctx.arc(cx, sy - 12, 18, 0, 7); ctx.fill();
+    ctx.save(); ctx.shadowColor = '#ff3a5a'; ctx.shadowBlur = 6;
+    ctx.fillStyle = '#ff5a74';
+    for (const [dx, dy] of [[-5, -14], [5, -14], [-2, -10], [2, -10]]) { ctx.beginPath(); ctx.arc(cx + dx, sy + dy, 2.2, 0, 7); ctx.fill(); }
+    ctx.restore();
+  } else {
+    // ── you cut the cord: a steel ceiling mount, an honest cable, no spider ──
+    ctx.fillStyle = '#3a3a44'; ctx.fillRect(cx - 30, 16, 60, 12);
+    ctx.fillStyle = '#5a5a66'; ctx.fillRect(cx - 30, 16, 60, 3);
+    ctx.fillStyle = '#2a2a32'; ctx.beginPath(); ctx.arc(cx, 30, 6, 0, 7); ctx.fill();
+    threadColor = '#8a8a96';   // a steel cable now
   }
-  // abdomen + head, lifted out of the dark with a fill, rim light and sheen
-  ctx.fillStyle = '#2a1a2e';
-  ctx.beginPath(); ctx.ellipse(cx, sy + 6, 19, 23, 0, 0, 7); ctx.fill();   // abdomen
-  ctx.beginPath(); ctx.arc(cx, sy - 12, 12, 0, 7); ctx.fill();             // head
-  ctx.strokeStyle = '#6a4a72'; ctx.lineWidth = 1.5;                        // rim light
-  ctx.beginPath(); ctx.ellipse(cx, sy + 6, 19, 23, 0, 0, 7); ctx.stroke();
-  ctx.fillStyle = 'rgba(180,140,200,0.18)';                                // top sheen
-  ctx.beginPath(); ctx.ellipse(cx - 5, sy - 2, 7, 9, -0.4, 0, 7); ctx.fill();
-  ctx.fillStyle = '#b21838';                                               // red hourglass
-  ctx.beginPath(); ctx.moveTo(cx - 6, sy - 2); ctx.lineTo(cx + 6, sy - 2);
-  ctx.lineTo(cx - 6, sy + 14); ctx.lineTo(cx + 6, sy + 14); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = 'rgba(255,60,90,0.3)'; ctx.beginPath(); ctx.arc(cx, sy - 12, 18, 0, 7); ctx.fill();
-  ctx.save(); ctx.shadowColor = '#ff3a5a'; ctx.shadowBlur = 6;             // glowing eyes
-  ctx.fillStyle = '#ff5a74';
-  for (const [dx, dy] of [[-5, -14], [5, -14], [-2, -10], [2, -10]]) { ctx.beginPath(); ctx.arc(cx + dx, sy + dy, 2.2, 0, 7); ctx.fill(); }
-  ctx.restore();
 
-  // silk thread down to the bobbing elevator
-  const ey = 108 + sway * 4, ex = cx + sway * 6;
-  ctx.strokeStyle = 'rgba(220,210,230,0.55)'; ctx.lineWidth = 1.4;
-  ctx.beginPath(); ctx.moveTo(cx, sy + 26); ctx.lineTo(ex, ey - 16); ctx.stroke();
+  // thread/cable down to the bobbing elevator
+  const ey = 108 + sway * (save.beatBoss ? 2 : 4), ex = cx + sway * (save.beatBoss ? 2 : 6);
+  ctx.strokeStyle = threadColor; ctx.lineWidth = save.beatBoss ? 2.4 : 1.4;
+  ctx.beginPath(); ctx.moveTo(cx, save.beatBoss ? 28 : sy + 26); ctx.lineTo(ex, ey - 16); ctx.stroke();
 
   // the dangling elevator car (two riders aboard, ceiling light)
   const cw = 46, ch = 32;
@@ -981,6 +988,172 @@ function drawWebSpider(s) {
   ctx.restore();
 }
 
+// ── the rooftop boss fight ──
+function drawBoss() {
+  const bg = game.bossGame;
+  // night sky / rooftop backdrop
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#0a0818'); sky.addColorStop(0.5, '#0a0510'); sky.addColorStop(1, '#08040a');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+  // a few stars
+  for (let i = 0; i < 40; i++) {
+    const x = (i * 97.3) % W, y = (i * 53.7) % (H * 0.5);
+    ctx.fillStyle = `rgba(200,200,255,${0.1 + 0.15 * (i % 3)})`; ctx.fillRect(x, y, 1.5, 1.5);
+  }
+  // shaft walls
+  const SL = W / 2 - 110, SR = W / 2 + 110;
+  ctx.fillStyle = 'rgba(20,14,24,0.7)'; ctx.fillRect(SL, 60, SR - SL, H - 60);
+  ctx.strokeStyle = '#2a1c30'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(SL, 60); ctx.lineTo(SL, H); ctx.moveTo(SR, 60); ctx.lineTo(SR, H); ctx.stroke();
+
+  const cx = W / 2;
+  // silk cable from the spider to the car
+  ctx.strokeStyle = 'rgba(220,210,235,0.5)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(cx, bg.sY + 6); ctx.lineTo(cx, bg.car.y - BOSS.carH / 2); ctx.stroke();
+
+  // danger band (leg sweep) — telegraph then solid
+  if (bg.danger) {
+    const d = bg.danger;
+    ctx.fillStyle = d.active ? 'rgba(255,40,70,0.4)' : `rgba(255,60,90,${0.10 + 0.08 * Math.sin(bg.t * 14)})`;
+    ctx.fillRect(SL, d.y - d.h / 2, SR - SL, d.h);
+    ctx.strokeStyle = d.active ? '#ff3a5a' : 'rgba(255,90,120,0.5)'; ctx.lineWidth = 2;
+    ctx.strokeRect(SL, d.y - d.h / 2, SR - SL, d.h);
+  }
+  // falling brood
+  for (const m of bg.minis) drawWebSpider({ x: m.x, y: m.y, size: m.r, sway: m.sway, dead: false });
+
+  // the giant spider
+  drawBigSpider(cx, bg.sY, BOSS.spiderR, bg);
+
+  // the elevator car
+  drawBossCar(cx, bg.car);
+
+  // boss particles + floaters
+  for (const f of bg.fx) {
+    ctx.globalAlpha = Math.max(0, 1 - f.life / f.max);
+    if (f.text) { ctx.fillStyle = f.color; ctx.font = 'bold 18px ui-monospace'; ctx.textAlign = 'center'; ctx.fillText(f.text, f.x, f.y); }
+    else { ctx.fillStyle = f.color; ctx.fillRect(f.x - 1.5, f.y - 1.5, 3, 3); }
+  }
+  ctx.globalAlpha = 1;
+
+  // ── HUD: spider HP bar (top) + car hearts ──
+  const bw = 360, bx = cx - bw / 2;
+  ctx.fillStyle = '#1a0a14'; ctx.fillRect(bx, 30, bw, 12);
+  ctx.fillStyle = '#c83050'; ctx.fillRect(bx, 30, bw * Math.max(0, bg.sHp / bg.sMaxHp), 12);
+  ctx.strokeStyle = '#6a3a4a'; ctx.lineWidth = 1; ctx.strokeRect(bx + 0.5, 30.5, bw - 1, 11);
+  ctx.fillStyle = '#e0a0b0'; ctx.font = 'bold 12px ui-monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText('THE SPIDER THAT HOLDS YOUR LIFT', cx, 26);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  for (let i = 0; i < bg.car.maxHp; i++) {
+    ctx.fillStyle = i < bg.car.hp ? '#ff4a6a' : '#3a2030'; ctx.font = 'bold 20px ui-monospace';
+    ctx.fillText('♥', 18 + i * 24, H - 26);
+  }
+  ctx.fillStyle = '#9a8aa2'; ctx.font = '11px ui-monospace'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  ctx.fillText(bg.car.webbed > 0 ? 'WEBBED — crank sluggish' : '↑ ram it when it drops · ↓ retreat · dodge the red', W - 16, H - 26);
+
+  // intro reveal / result overlay
+  if (bg.intro > 0) {
+    const a = Math.min(1, bg.intro) * Math.min(1, (3.2 - bg.intro) * 2);
+    ctx.globalAlpha = Math.max(0, Math.min(1, a));
+    ctx.fillStyle = 'rgba(6,3,10,0.82)'; ctx.fillRect(0, H / 2 - 96, W, 192);
+    ctx.fillStyle = '#c89aff'; ctx.font = 'bold 30px ui-monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('THE ROOF', cx, H / 2 - 44);
+    ctx.fillStyle = '#bfa45f'; ctx.font = '15px ui-monospace';
+    ctx.fillText('your lift was never broken. it hangs from a thread —', cx, H / 2 - 8);
+    ctx.fillText('and something up here has been holding it all along.', cx, H / 2 + 16);
+    ctx.fillStyle = '#ff5a74'; ctx.font = 'bold 16px ui-monospace';
+    ctx.fillText('RAM IT WITH THE CAR. CUT THE CORD.', cx, H / 2 + 52);
+    ctx.globalAlpha = 1;
+  } else if (bg.result) {
+    ctx.fillStyle = 'rgba(6,3,10,0.78)'; ctx.fillRect(0, H / 2 - 50, W, 100);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if (bg.result === 'win') { ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 44px ui-monospace'; ctx.fillText('THE CORD SNAPS', cx, H / 2); }
+    else { ctx.fillStyle = '#ff3a4a'; ctx.font = 'bold 44px ui-monospace'; ctx.fillText('PULLED INTO THE WEB', cx, H / 2); }
+  }
+}
+
+function drawBigSpider(x, y, r, bg) {
+  const wig = Math.sin(bg.sway) * 5, wig2 = Math.cos(bg.sway) * 5;
+  const hurt = bg.sInvuln > 0 && Math.floor(bg.sInvuln * 14) % 2 === 0;
+  const shk = bg.sShake > 0 ? (Math.random() - 0.5) * 6 : 0;
+  ctx.save(); ctx.translate(shk, 0);
+  // backglow
+  const halo = ctx.createRadialGradient(x, y, 10, x, y, r * 4);
+  halo.addColorStop(0, 'rgba(120,40,70,0.4)'); halo.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = halo; ctx.fillRect(x - r * 4, y - r * 4, r * 8, r * 8);
+  // legs gripping the top of the shaft
+  for (let pass = 0; pass < 2; pass++) {
+    ctx.strokeStyle = pass === 0 ? '#0b0610' : '#6a566e'; ctx.lineWidth = pass === 0 ? 8 : 3.5; ctx.lineCap = 'round';
+    for (let i = -1; i <= 1; i += 2) {
+      for (let l = 0; l < 4; l++) {
+        const knee = { x: x + i * (r * 0.9 + l * 9), y: y - r * 0.6 - l * 4 + (l % 2 ? wig : wig2) };
+        const foot = { x: x + i * (r * 1.8 + l * 26), y: 64 + l * 3 };
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(knee.x, knee.y); ctx.lineTo(foot.x, foot.y); ctx.stroke();
+      }
+    }
+  }
+  ctx.globalAlpha = hurt ? 0.5 : 1;
+  ctx.fillStyle = '#2a1a2e';
+  ctx.beginPath(); ctx.ellipse(x, y + r * 0.3, r, r * 1.25, 0, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(x, y - r * 0.7, r * 0.65, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#6a4a72'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y + r * 0.3, r, r * 1.25, 0, 0, 7); ctx.stroke();
+  ctx.fillStyle = hurt ? '#ff8090' : '#b21838';   // hourglass
+  ctx.beginPath(); ctx.moveTo(x - r * 0.32, y); ctx.lineTo(x + r * 0.32, y);
+  ctx.lineTo(x - r * 0.32, y + r * 0.8); ctx.lineTo(x + r * 0.32, y + r * 0.8); ctx.closePath(); ctx.fill();
+  ctx.save(); ctx.shadowColor = '#ff3a5a'; ctx.shadowBlur = 8; ctx.fillStyle = '#ff5a74';
+  for (const [dx, dy] of [[-7, -r * 0.85], [7, -r * 0.85], [-3, -r * 0.6], [3, -r * 0.6]]) { ctx.beginPath(); ctx.arc(x + dx, y + dy, 2.6, 0, 7); ctx.fill(); }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawBossCar(x, C) {
+  const w = BOSS.carW, h = BOSS.carH, top = C.y - h / 2, left = x - w / 2;
+  const hurt = C.invuln > 0 && Math.floor(C.invuln * 12) % 2 === 0;
+  ctx.save(); if (hurt) ctx.globalAlpha = 0.6;
+  // warm glow
+  const halo = ctx.createRadialGradient(x, C.y, 20, x, C.y, 130);
+  halo.addColorStop(0, 'rgba(255,200,120,0.14)'); halo.addColorStop(1, 'rgba(255,200,120,0)');
+  ctx.fillStyle = halo; ctx.fillRect(x - 130, C.y - 130, 260, 260);
+  ctx.fillStyle = C.webbed > 0 ? '#8a8470' : '#6a5238'; ctx.fillRect(left, top, w, h);
+  ctx.fillStyle = '#42301e'; ctx.fillRect(left + 4, top + 4, w - 8, h - 8);
+  ctx.fillStyle = '#ffe6b0'; ctx.fillRect(x - 20, top + 6, 40, 4);
+  // two riders bracing
+  ctx.fillStyle = '#3a5a78'; ctx.fillRect(x - 24, C.y - 4, 12, 20);
+  ctx.fillStyle = '#5a3a4a'; ctx.fillRect(x + 12, C.y - 4, 12, 20);
+  ctx.fillStyle = '#d4a878'; ctx.beginPath(); ctx.arc(x - 18, C.y - 9, 6, 0, 7); ctx.arc(x + 18, C.y - 9, 6, 0, 7); ctx.fill();
+  ctx.strokeStyle = C.webbed > 0 ? '#d8d0b0' : '#bfa45f'; ctx.lineWidth = 2; ctx.strokeRect(left + 0.5, top + 0.5, w - 1, h - 1);
+  if (C.webbed > 0) {     // webbing strands across the car
+    ctx.strokeStyle = 'rgba(230,225,240,0.6)'; ctx.lineWidth = 1;
+    for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.moveTo(left, top + i * h / 5); ctx.lineTo(left + w, top + ((i + 2) % 5) * h / 5); ctx.stroke(); }
+  }
+  ctx.restore();
+}
+
+function drawVictory() {
+  ctx.fillStyle = '#0a0812'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#ffd44a'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = 'bold 46px ui-monospace';
+  ctx.fillText('THE CORD IS CUT', W / 2, 130);
+  // the freed elevator on a steel cable, no spider
+  const cx = W / 2, t = performance.now() / 1000, ey = 250 + Math.sin(t) * 3;
+  ctx.strokeStyle = '#8a8a96'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx, 170); ctx.lineTo(cx, ey - 24); ctx.stroke();
+  ctx.fillStyle = '#5a4530'; ctx.fillRect(cx - 34, ey - 24, 68, 48);
+  ctx.fillStyle = '#3a2a1c'; ctx.fillRect(cx - 30, ey - 20, 60, 40);
+  ctx.fillStyle = '#ffdd99'; ctx.fillRect(cx - 10, ey - 18, 20, 4);
+  ctx.fillStyle = '#3a5a78'; ctx.fillRect(cx - 13, ey - 2, 8, 12); ctx.fillStyle = '#5a3a4a'; ctx.fillRect(cx + 5, ey - 2, 8, 12);
+  ctx.strokeStyle = '#bfa45f'; ctx.lineWidth = 1; ctx.strokeRect(cx - 34, ey - 24, 68, 48);
+
+  ctx.fillStyle = '#bfa45f'; ctx.font = '17px ui-monospace';
+  ctx.fillText('the spider falls. the thread snaps. for the first time,', W / 2, 330);
+  ctx.fillText('your lift runs on honest steel — just an elevator.', W / 2, 356);
+  ctx.fillStyle = '#7adf9a'; ctx.font = 'bold 18px ui-monospace';
+  ctx.fillText('★ CUT THE CORD  +30 unlocked', W / 2, 404);
+  ctx.fillStyle = '#7a6a4a'; ctx.font = '13px ui-monospace';
+  ctx.fillText('the title remembers what you did here.', W / 2, 432);
+  drawButton('▸  CLOCK OUT A HERO', W / 2 - 140, H - 130, 280, 48, () => { menu = null; game.state = 'TITLE'; }, true);
+}
+
 // ── shift done overlay ──
 function drawShiftDone() {
   ctx.fillStyle = 'rgba(13,10,8,0.86)'; ctx.fillRect(0, 0, W, H);
@@ -992,17 +1165,26 @@ function drawShiftDone() {
   ctx.fillText(`shift bonus  +${game.bonus} ◆`, W / 2, H / 2 - 8);
   ctx.fillStyle = '#d4a050'; ctx.font = 'bold 22px ui-monospace';
   ctx.fillText(`◆ ${run.parts} parts in pocket`, W / 2, H / 2 + 36);
-  drawButton('VISIT THE PARTS SHOP  ▸', W / 2 - 150, H / 2 + 80, 300, 46, openShop, true);
+  // once you've seen the Spider Floor, the way up is open — a one-way climb
+  if (save.stats.spiderVisits >= 1) {
+    drawButton('VISIT THE PARTS SHOP  ▸', W / 2 - 320, H / 2 + 80, 300, 46, openShop, true);
+    drawButton('▲  CLIMB TO THE ROOF', W / 2 + 20, H / 2 + 80, 300, 46, enterBoss, false);
+    ctx.fillStyle = '#9a5a6a'; ctx.font = 'italic 12px ui-monospace';
+    ctx.fillText('press C to face the spider that holds your lift — win or lose, the run ends', W / 2, H / 2 + 150);
+  } else {
+    drawButton('VISIT THE PARTS SHOP  ▸', W / 2 - 150, H / 2 + 80, 300, 46, openShop, true);
+  }
 }
 
 function drawFired() {
   ctx.fillStyle = 'rgba(13,10,8,0.9)'; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#aa3a32'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = 'bold 50px ui-monospace';
-  ctx.fillText("YOU'RE FIRED", W / 2, H / 2 - 70);
+  ctx.fillText(game.bossLost ? 'THE WEB WINS' : "YOU'RE FIRED", W / 2, H / 2 - 70);
   ctx.fillStyle = '#bfa45f'; ctx.font = '18px ui-monospace';
   const survived = run.shiftNum - 1;
-  ctx.fillText(`survived ${survived} shift${survived === 1 ? '' : 's'}  ·  ${run.totalDelivered} total deliveries`, W / 2, H / 2 - 24);
+  if (game.bossLost) ctx.fillText('the spider reels you back in. the lift still isn\'t yours.', W / 2, H / 2 - 24);
+  else ctx.fillText(`survived ${survived} shift${survived === 1 ? '' : 's'}  ·  ${run.totalDelivered} total deliveries`, W / 2, H / 2 - 24);
   const got = ACHIEVEMENTS.filter(a => save.ach[a.key]).length;
   ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 20px ui-monospace';
   ctx.fillText(`★ ${save.stars} banked  ·  ${got}/${ACHIEVEMENTS.length} achievements`, W / 2, H / 2 + 12);

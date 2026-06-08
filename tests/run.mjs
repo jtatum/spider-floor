@@ -400,5 +400,48 @@ test('a spotless shift unlocks "Spotless"', (G) => {
   assert.ok(G.save.ach.perfect, 'no walk-offs → Spotless');
 });
 
+test('the rooftop boss is reachable once the Spider Floor is discovered', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.save.stats.spiderVisits = 1;        // discovered
+  G.enterBoss();
+  assert.equal(G.game.state, 'BOSS');
+  assert.ok(G.game.bossGame.sHp > 0 && G.game.bossGame.car.hp === 4);
+  assert.equal(G.save.stats.bossTries, 1, 'attempt recorded');
+  assert.ok(G.save.ach.climb, 'The Long Climb unlocked on attempt');
+});
+
+test('ramming the exposed spider damages it; beating it wins + cuts the cord', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.enterBoss();
+  const bg = G.game.bossGame; bg.intro = 0;
+  const before = G.save.stars;
+  // force a kill: park the spider exposed and slam the car up into it repeatedly
+  let guard = 0;
+  while (!bg.result && guard++ < 4000) {
+    bg.sState = 'drop'; bg.sInvuln = 0;                 // keep it exposed/vulnerable
+    bg.car.y = G.BOSS.carTop + 60; bg.car.v = -400;     // fast upward ram
+    G.update(1 / 60);
+  }
+  assert.equal(bg.result, 'win', 'spider defeated');
+  G.step(160);                                          // resolve the exit
+  assert.equal(G.game.state, 'VICTORY');
+  assert.equal(G.save.beatBoss, true, 'the cord is cut (persisted flag)');
+  assert.ok(G.save.ach.cutCord, 'Cut the Cord unlocked');
+  assert.ok(G.save.stars >= before + 30, 'the +30 ★ achievement paid out');
+});
+
+test('losing the boss ends the run in the web', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.enterBoss();
+  const bg = G.game.bossGame; bg.intro = 0;
+  bg.car.hp = 0;                 // overwhelmed
+  G.update(1 / 60);
+  assert.equal(bg.result, 'lose');
+  G.step(160);
+  assert.equal(G.game.state, 'FIRED');
+  assert.equal(G.game.bossLost, true);
+  assert.equal(G.save.beatBoss, false, 'the cord is not cut on a loss');
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

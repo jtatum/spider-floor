@@ -34,13 +34,19 @@ function handleKey(k) {
     return;
   }
   if (st === 'FIRED') {
-    if (k === ' ' || k === 'enter') { menu = null; game.state = 'TITLE'; }
+    if (k === ' ' || k === 'enter') { menu = null; game.bossLost = false; game.state = 'TITLE'; }
     if (k === 'm') { menu = 'WORKSHOP'; }
     if (k === 'a') { menu = 'ACH'; }
     return;
   }
+  if (st === 'VICTORY') {
+    if (k === ' ' || k === 'enter') { menu = null; game.state = 'TITLE'; }
+    return;
+  }
   if (st === 'SHIFT_DONE') {
     if (k === ' ' || k === 'enter') openShop();
+    // once you've seen the Spider Floor, you may climb to the roof and end it
+    if (k === 'c' && save.stats.spiderVisits >= 1) enterBoss();
     return;
   }
   if (st === 'SHOP') {
@@ -199,6 +205,7 @@ function update(dt) {
   if (game) updateFx(dt);   // particles / floating text decay in every state
 
   if (game && game.state === 'SPIDER') { updateSpider(dt); return; }
+  if (game && game.state === 'BOSS') { updateBoss(dt); return; }
   if (!game || game.state !== 'PLAYING') return;
   game.t += dt;
   game.shiftTime += dt;
@@ -547,6 +554,156 @@ function exitSpider() {
   e.y = 0; e.v = 0; e.doors = 1; e.doorTarget = 1; e.wasReady = false;
   game.spiderGame = null;
   game.state = 'PLAYING';
+}
+
+// ──────────────────────────────────────────── the rooftop boss
+// The truth: the lift hangs from a giant spider's thread. You climb above the
+// penthouse and fight it — by ramming it with your own elevator. Momentum (the
+// thing the whole game taught you) is the weapon. Dodge its telegraphed leg
+// sweeps and falling brood; slam it when it drops down exposed. Win → the cord
+// is cut and the lift runs free; lose → the run ends in the web.
+const BOSS = {
+  carW: 150, carH: 86, carTop: 188, carBot: H - 70,
+  accel: 760, brake: 1100, maxV: 440, coast: 0.95,
+  spiderR: 34, restY: 110, lowY: 168,
+};
+
+function enterBoss() {
+  save.stats.bossTries++; checkAchievements();
+  game.state = 'BOSS';
+  const hp = 6 + Math.floor((run.shiftNum - 1) / 3);   // scales a little with how far you got
+  game.bossGame = {
+    t: 0, intro: 3.2, result: null, exitT: 0,
+    sHp: hp, sMaxHp: hp, sY: BOSS.restY, sState: 'wind', sTimer: 1.6, sInvuln: 0, sShake: 0,
+    attackKind: null, danger: null, sway: 0,
+    car: { y: (BOSS.carTop + BOSS.carBot) / 2, v: 0, hp: 4, maxHp: 4, invuln: 0, hitFlash: 0, webbed: 0 },
+    minis: [], fx: [], spaceWas: false,
+  };
+  sfx.spider();
+}
+
+function bossSpawnMini(bg, x) {
+  bg.minis.push({ x: x ?? (W / 2 + (Math.random() - 0.5) * 200), y: bg.sY + 30, vy: 90 + Math.random() * 70, r: 9 + Math.random() * 3, sway: Math.random() * 6 });
+}
+function bossPop(bg, x, y, color, n = 8) {
+  for (let i = 0; i < n; i++) { const a = Math.random() * 7, s = 40 + Math.random() * 130; bg.fx.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40, life: 0, max: 0.5, color }); }
+}
+
+function updateBoss(dt) {
+  const bg = game.bossGame;
+  if (!bg) { game.state = 'PLAYING'; return; }
+  bg.t += dt; bg.sway += dt * 2;
+  if (bg.sShake > 0) bg.sShake -= dt;
+  for (const f of bg.fx) { f.life += dt; f.vy += 240 * dt; f.x += f.vx * dt; f.y += f.vy * dt; }
+  bg.fx = bg.fx.filter(f => f.life < f.max);
+
+  if (bg.intro > 0) { bg.intro -= dt; return; }            // hold during the reveal card
+  if (bg.result) { bg.exitT += dt; if (bg.exitT > 2.2) exitBoss(); return; }
+
+  const C = bg.car;
+  if (C.invuln > 0) C.invuln -= dt;
+  if (C.webbed > 0) C.webbed -= dt;
+  if (bg.sInvuln > 0) bg.sInvuln -= dt;
+
+  // ── crank the car (momentum, snappier than the day job) ──
+  let input = 0;
+  if (keys.has('arrowup') || keys.has('w')) input -= 1;     // up = toward the spider
+  if (keys.has('arrowdown') || keys.has('s')) input += 1;
+  const grip = C.webbed > 0 ? 0.45 : 1;                     // web slows the crank
+  if (input !== 0) {
+    const braking = Math.sign(input) !== Math.sign(C.v) && Math.abs(C.v) > 1;
+    C.v += input * (braking ? BOSS.brake : BOSS.accel) * grip * dt;
+  } else { C.v *= Math.pow(BOSS.coast, dt * 60); if (Math.abs(C.v) < 3) C.v = 0; }
+  C.v = Math.max(-BOSS.maxV, Math.min(BOSS.maxV, C.v));
+  C.y += C.v * dt;
+  if (C.y < BOSS.carTop) { C.y = BOSS.carTop; if (C.v < 0) C.v = 0; }
+  if (C.y > BOSS.carBot) { C.y = BOSS.carBot; C.v = 0; }
+
+  // ── spider behaviour: wind-up → strike → drop-down (exposed) → recoil ──
+  bg.sTimer -= dt;
+  const targetY = bg.sState === 'drop' ? BOSS.lowY : bg.sState === 'recoil' ? BOSS.restY - 24 : BOSS.restY;
+  bg.sY += (targetY - bg.sY) * Math.min(1, 8 * dt);
+  if (bg.sTimer <= 0) {
+    if (bg.sState === 'wind') {
+      // commit the telegraphed attack
+      if (bg.attackKind === 'sweep') {
+        bg.danger.active = true; sfx.hurt();
+      } else if (bg.attackKind === 'brood') {
+        const n = 2 + Math.floor(run.shiftNum / 4);
+        for (let i = 0; i < Math.min(4, n); i++) bossSpawnMini(bg);
+        bg.danger = null;
+      }
+      bg.sState = 'strike'; bg.sTimer = 0.45;
+    } else if (bg.sState === 'strike') {
+      bg.danger = null; bg.sState = 'drop'; bg.sTimer = 1.7;     // exposed
+    } else { // drop or recoil → wind up the next attack
+      bg.attackKind = Math.random() < 0.55 ? 'sweep' : 'brood';
+      if (bg.attackKind === 'sweep') {
+        const y = BOSS.carTop + 80 + Math.random() * (BOSS.carBot - BOSS.carTop - 120);
+        bg.danger = { y, h: 64, active: false };
+      }
+      bg.sState = 'wind'; bg.sTimer = 1.15;
+    }
+  }
+
+  // ── leg-sweep danger band ──
+  if (bg.danger && bg.danger.active) {
+    if (Math.abs(C.y - bg.danger.y) < BOSS.carH / 2 + bg.danger.h / 2 && C.invuln <= 0) bossHurt(bg);
+  }
+  // ── falling brood ──
+  for (const m of bg.minis) {
+    m.y += m.vy * dt; m.sway += dt * 8; m.x += Math.sin(m.sway) * 0.4;
+    if (Math.abs(m.x - W / 2) < BOSS.carW / 2 && Math.abs(m.y - C.y) < BOSS.carH / 2 + m.r && C.invuln <= 0) {
+      bossHurt(bg); m.y = H + 99;
+    }
+  }
+  bg.minis = bg.minis.filter(m => m.y < H + 40);
+
+  // ── ram the spider with the car ──
+  const carTopEdge = C.y - BOSS.carH / 2;
+  const spiderBottom = bg.sY + BOSS.spiderR;
+  if (carTopEdge <= spiderBottom + 4) {
+    if (bg.sState === 'drop' && bg.sInvuln <= 0 && C.v < -40) {
+      const dmg = C.v < -250 ? 2 : 1;
+      bg.sHp -= dmg; bg.sInvuln = 1.0; bg.sShake = 0.4;
+      bg.sState = 'recoil'; bg.sTimer = 0.8;
+      C.v = 240; bossPop(bg, W / 2, spiderBottom, '#ff3a5a', 14);
+      floatBoss(bg, `-${dmg}`, '#ff5a74'); shake(8); sfx.slash();
+      if (bg.sHp <= 0) { bg.sHp = 0; bg.result = 'win'; shake(14); sfx.fanfare(); }
+    } else {
+      C.v = Math.max(C.v, 150);          // armoured — bounce off
+    }
+    C.y = Math.max(C.y, spiderBottom + BOSS.carH / 2 + 2);
+  }
+
+  if (C.hp <= 0 && !bg.result) { bg.result = 'lose'; shake(12); sfx.caught(); }
+}
+function bossHurt(bg) {
+  const C = bg.car;
+  C.hp--; C.invuln = 1.2; C.hitFlash = 0.3;
+  if (bg.attackKind === 'sweep' && Math.random() < 0.5) C.webbed = 2.0;
+  flash('#7a1030', 0.3); shake(9); sfx.hurt();
+}
+function floatBoss(bg, text, color) { bg.fx.push({ x: W / 2, y: bg.sY + 40, vx: 0, vy: -45, life: 0, max: 1.0, color, text }); }
+
+function exitBoss() {
+  const bg = game.bossGame;
+  if (bg.result === 'win') {
+    save.stats.bossWins++;
+    save.beatBoss = true;
+    checkAchievements();          // Cut the Cord (+30★) fires here
+    persist();
+    game.state = 'VICTORY';
+    game.doneT = 0;
+  } else {
+    save.best.shifts = Math.max(save.best.shifts, run.shiftNum - 1);
+    save.best.delivered = Math.max(save.best.delivered, run.totalDelivered);
+    persist();
+    game.bossLost = true;
+    game.state = 'FIRED';
+    game.doneT = 0;
+  }
+  game.bossGame = null;
 }
 
 // ──────────────────────────────────────────────────────────────── shop

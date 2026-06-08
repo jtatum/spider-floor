@@ -30,6 +30,7 @@ const SHIM = `
   newRun, startShift, endShift, update, mods, maxStrikes, combineFx,
   spawnPassenger, buyUpgrade, buyFuse, buyMeta, buySpecial, openShop, rerollShop, dealHand, loadSave, persist,
   nearestFloorIdx, isAligned, doorsOpen, ridersAboard, slotsAboard, capacityNow, enterSpider, spawnWebSpider,
+  enterBoss, updateBoss, exitBoss, BOSS,
 };
 `;
 

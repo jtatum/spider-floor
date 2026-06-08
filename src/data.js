@@ -287,6 +287,8 @@ const ACHIEVEMENTS = [
   { key: 'twoMod',    name: 'Bad Day at Work',           desc: 'Work a shift under two conditions.',       award: 6,  test: s => s.twoModShift >= 1 },
   { key: 'night',     name: 'Graveyard',                 desc: 'Work the Graveyard Shift.',                award: 5,  test: s => s.nightShift >= 1 },
   { key: 'comeback',  name: 'Comeback Kid',              desc: 'Survive a shift one strike from fired.',   award: 8,  test: s => s.comeback >= 1 },
+  { key: 'climb',     name: 'The Long Climb',            desc: 'Climb past the penthouse to face the truth.', award: 6, test: s => s.bossTries >= 1 },
+  { key: 'cutCord',   name: 'Cut the Cord',              desc: 'Defeat the spider that controls the lift.', award: 30, test: s => s.bossWins >= 1 },
 ];
 
 function defaultStats() {
@@ -294,12 +296,12 @@ function defaultStats() {
            vips: 0, tippers: 0, movers: 0, powerups: 0, perks: 0, everMaxed: 0,
            bestMaxedRun: 0, bestShiftDeliveries: 0, bestRunParts: 0, perfectShifts: 0,
            spiderVisits: 0, bestSpiderLoot: 0, noHitClears: 0, twoModShift: 0,
-           nightShift: 0, comeback: 0 };
+           nightShift: 0, comeback: 0, bossTries: 0, bossWins: 0 };
 }
 function defaultSave() {
   const meta = {};
   for (const m of META) meta[m.key] = 0;
-  return { stars: 0, meta, best: { shifts: 0, delivered: 0 }, stats: defaultStats(), ach: {} };
+  return { stars: 0, meta, best: { shifts: 0, delivered: 0 }, stats: defaultStats(), ach: {}, beatBoss: false };
 }
 function loadSave() {
   const def = defaultSave();
