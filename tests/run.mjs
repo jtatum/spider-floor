@@ -214,10 +214,11 @@ test('Master Key installs one random upgrade each run; Sturdy Cables fits a damp
 test('Hazard Pay multiplies achievement payouts', (G) => {
   G.save.meta.hazardPay = 2;          // +50% to achievement awards
   const before = G.save.stars;
-  G.save.stats.shifts = 1;            // only "Day One" (award 4) becomes true
+  G.save.stats.shifts = 1;            // only "Day One" becomes true (runs still 0)
   G.checkAchievements();
   assert.ok(G.save.ach.dayOne, 'Day One unlocked');
-  assert.equal(G.save.stars - before, 6, '4 ★ ×1.5 = 6');
+  const dayOne = G.ACHIEVEMENTS.find(a => a.key === 'dayOne');
+  assert.equal(G.save.stars - before, Math.round(dayOne.award * 1.5), 'award scaled by Hazard Pay');
 });
 
 test('Workshop: a perk caps at max and refuses when you cannot afford it', (G) => {

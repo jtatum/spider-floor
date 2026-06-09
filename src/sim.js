@@ -430,8 +430,8 @@ function enterSpider() {
     t: 0, result: null, exitT: 0,
     player: { x: W / 2, facing: 1, hp: 3, maxHp: 3, swing: 0, swingCool: 0, invuln: 0, hurtT: 0 },
     spiders: [], fx: [], loot: 0,
-    spawnTimer: 1.0,
-    spawnEvery: Math.max(1.1, 2.4 - run.shiftNum * 0.07),
+    spawnTimer: 0.8,
+    spawnEvery: Math.max(0.95, 2.1 - run.shiftNum * 0.07),
     lootPerKill: 2 + (assoc >= 2 ? 1 : 0),
     spaceWas: false, hitFlash: 0, killed: 0, hitTaken: false,
   };
@@ -441,11 +441,13 @@ function enterSpider() {
 
 function spawnWebSpider(sg) {
   const x = PLAT_LEFT + 30 + Math.random() * (PLAT_RIGHT - PLAT_LEFT - 60);
+  // both descent and crawl speed climb with how long you've lingered — the web
+  // gets genuinely faster, so the longer you farm the more it outruns your blade
   sg.spiders.push({
     x, y: 30 + Math.random() * 30,
-    vy: 70 + run.shiftNum * 3 + Math.random() * 40,
-    dropAt: PLAT_Y - 70 - Math.random() * 120,
-    crawl: 52 + run.shiftNum * 3.5 + Math.random() * 30,
+    vy: 80 + run.shiftNum * 3 + sg.t * 3.5 + Math.random() * 40,
+    dropAt: PLAT_Y - 60 - Math.random() * 110,
+    crawl: 54 + run.shiftNum * 3 + sg.t * 5 + Math.random() * 30,
     state: 'descend', sway: Math.random() * 6, dead: false, deadT: 0, vyDead: 0,
     size: 11 + Math.random() * 4, hitCool: 0,
   });
@@ -486,13 +488,14 @@ function updateSpider(dt) {
   // ── bail out the lift door ──
   if ((keys.has('arrowup') || keys.has('w')) && P.x < DOOR_X + 50) { sg.result = 'bailed'; sfx.chime(); return; }
 
-  // ── spawn waves, ramping the longer you linger ──
+  // ── spawn waves, flooding harder the longer you linger ──
   sg.spawnTimer -= dt;
   if (sg.spawnTimer <= 0) {
     spawnWebSpider(sg);
-    if (sg.t > 8 && Math.random() < 0.35) spawnWebSpider(sg);   // doubles up late
-    sg.spawnTimer = sg.spawnEvery * (0.7 + Math.random() * 0.6);
-    sg.spawnEvery = Math.max(0.5, sg.spawnEvery * 0.97);
+    if (sg.t > 5 && Math.random() < 0.5) spawnWebSpider(sg);    // doubles
+    if (sg.t > 12 && Math.random() < 0.45) spawnWebSpider(sg);  // and triples
+    sg.spawnTimer = sg.spawnEvery * (0.7 + Math.random() * 0.5);
+    sg.spawnEvery = Math.max(0.28, sg.spawnEvery * 0.92);       // floods past your kill rate
   }
 
   // ── sword hitbox ──
@@ -509,12 +512,13 @@ function updateSpider(dt) {
       s.y += 300 * dt;
       if (s.y >= PLAT_Y - 12) { s.y = PLAT_Y - 12; s.state = 'crawl'; }
     } else if (s.state === 'crawl') {
-      s.x += (Math.sign(P.x - s.x) || 1) * s.crawl * dt;
+      const lunge = Math.abs(s.x - P.x) < 72 ? 2.3 : 1;        // it pounces when close
+      s.x += (Math.sign(P.x - s.x) || 1) * s.crawl * lunge * dt;
       s.sway += dt * 12;
       if (Math.abs(s.x - P.x) < 17 && P.invuln <= 0) {     // it reaches you
-        P.hp--; P.invuln = 1.2; P.hurtT = 0.4; sg.hitFlash = 0.3; sg.hitTaken = true;
+        P.hp--; P.invuln = 0.7; P.hurtT = 0.4; sg.hitFlash = 0.3; sg.hitTaken = true;
         flash('#7a1030', 0.25); shake(9); sfx.hurt();
-        s.x += (s.x < P.x ? -1 : 1) * 34; s.hitCool = 0.6;
+        s.x += (s.x < P.x ? -1 : 1) * 30; s.hitCool = 0.5;
       }
     }
     if (swinging && !s.dead && Math.abs(s.x - hx) < reach && Math.abs(s.y - hy) < 44) {
