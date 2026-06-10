@@ -110,19 +110,64 @@ test('crank has momentum — releasing does not auto-stop', (G) => {
   assert.ok(vCoast > vRelease * 0.4, `should still be coasting (got ${Math.round(vCoast)} of ${Math.round(vRelease)})`);
 });
 
-// ── in-run shop ──────────────────────────────────────────────────────────────
+// ── mid-shift leveling ──────────────────────────────────────────────────────
 
-test('buying an upgrade charges parts and caps at max level', (G) => {
+test('deliveries earn XP and a full bar opens a level-up', (G) => {
   G.run = G.newRun(); G.startShift();
-  G.run.parts = 100;
-  const u = G.UPGRADES.find(x => x.key === 'dispatch');   // max 1
-  const cost = u.costs[0];
-  G.buyUpgrade(u);
-  assert.equal(G.run.up.dispatch, 1);
-  assert.equal(G.run.parts, 100 - cost);
-  G.buyUpgrade(u);                                          // already maxed
-  assert.equal(G.run.up.dispatch, 1, 'cannot exceed max');
-  assert.equal(G.run.parts, 100 - cost, 'no charge when maxed');
+  G.run.xp = G.run.xpNext - 1;                     // one delivery from leveling
+  G.game.passengers = []; addRider(G, 2, 'normal');
+  openDoorsAt(G, 2);
+  G.step(3);
+  assert.equal(G.game.state, 'LEVELUP', 'the game freezes for the pick');
+  assert.ok(G.game.levelUp.choices.length >= 3, 'three choices offered');
+  assert.equal(G.run.level, 1, 'level counted');
+  assert.equal(G.run.levelPending, 0, 'pending level consumed');
+});
+
+test('picking a choice installs it and applies mid-shift', (G) => {
+  G.run = G.newRun(); G.startShift();
+  const before = G.game.m.maxSpeed;
+  G.run.levelPending = 1;
+  G.step(1);                                        // opens the level-up
+  assert.equal(G.game.state, 'LEVELUP');
+  const motor = G.UPGRADES.find(u => u.key === 'motor');
+  G.game.levelUp.choices = [motor];                 // force a deterministic pick
+  G.pickLevel(motor);
+  assert.equal(G.run.up.motor, 1, 'installed');
+  assert.equal(G.game.state, 'PLAYING', 'back to work');
+  assert.ok(G.game.m.maxSpeed > before, 'the new motor works immediately');
+});
+
+test('skipping a level-up banks ◆ instead', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.run.levelPending = 1; G.step(1);
+  const before = G.run.parts;
+  G.skipLevel();
+  assert.equal(G.run.parts, before + 2, 'skip pays +2 ◆');
+  assert.equal(G.game.state, 'PLAYING');
+});
+
+test('slot caps: a full fitting rack only deepens, never widens', (G) => {
+  G.run = G.newRun(); G.startShift();
+  const fittings = G.UPGRADES.filter(u => u.kind === 'fitting');
+  for (let i = 0; i < G.FITTING_SLOTS; i++) G.run.up[fittings[i].key] = 1;
+  const eligible = G.eligibleUpgrades();
+  assert.ok(eligible.length > 0, 'still choices (owned levels + habits)');
+  for (const u of eligible) {
+    assert.ok(u.kind === 'habit' || G.run.up[u.key] > 0,
+      `${u.key} is a NEW fitting offered past the cap`);
+  }
+});
+
+test('a pending level-up resolves before the shift can end', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.run.levelPending = 1;
+  G.game.delivered = G.game.quota;                 // quota met at the same moment
+  G.step(1);
+  assert.equal(G.game.state, 'LEVELUP', 'the pick comes first');
+  G.pickLevel(G.game.levelUp.choices[0]);
+  G.step(2);
+  assert.equal(G.game.state, 'SHIFT_DONE', 'then the shift closes');
 });
 
 // ── Spider Floor ─────────────────────────────────────────────────────────────
@@ -269,17 +314,78 @@ test('the shop offers two rotating specials', (G) => {
   assert.notEqual(G.shop.offers[0].key, G.shop.offers[1].key, 'two distinct specials');
 });
 
-test('the shop deals a drafted hand of non-maxed upgrades', (G) => {
-  G.run = G.newRun(); G.startShift(); G.openShop();
-  assert.ok(G.shop.hand.length >= 3 && G.shop.hand.length <= 5, `hand size ${G.shop.hand.length}`);
-  assert.ok(G.shop.hand.every(u => G.run.up[u.key] < u.max), 'only offers improvable upgrades');
+test('restocking the shelf costs parts, once per visit', (G) => {
+  G.run = G.newRun(); G.startShift(); G.run.parts = 20; G.openShop();
+  G.rerollShop();                                  // paid restock
+  assert.equal(G.run.parts, 17, 'restock costs 3');
+  G.rerollShop();                                  // refused — already used
+  assert.equal(G.run.parts, 17, 'no second charge');
+  G.openShop();                                    // a fresh visit resets the allowance
+  G.rerollShop();
+  assert.equal(G.run.parts, 14, 'next visit may pay again');
 });
 
-test('reroll deals a new hand and costs parts', (G) => {
-  G.run = G.newRun(); G.startShift(); G.run.parts = 20; G.run.rerolls = 0; G.openShop();
-  const before = G.run.parts;
-  G.rerollShop();
-  assert.equal(G.run.parts, before - 3, 'reroll costs 3 parts when no free rerolls');
+test('banish strikes a part from the run and refills the choices', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.run.levelPending = 1; G.step(1);
+  assert.equal(G.game.state, 'LEVELUP');
+  assert.equal(G.run.banishes, 1, 'one banish per run');
+  const lv = G.game.levelUp;
+  const victim = lv.choices[0];
+  const n = lv.choices.length;
+  G.banishLevel(victim);
+  assert.ok(G.run.banished.includes(victim.key), 'gone from the pool');
+  assert.equal(G.run.banishes, 0, 'banish spent');
+  assert.equal(lv.choices.length, n, 'the card was replaced, not removed');
+  assert.ok(!lv.choices.some(u => u.key === victim.key), 'replacement is a different part');
+  for (let i = 0; i < 30; i++) assert.ok(!G.levelChoices(4).some(u => u.key === victim.key),
+    'never offered again this run');
+  const other = lv.choices[0];
+  G.banishLevel(other);
+  assert.ok(!G.run.banished.includes(other.key), 'a second banish is refused');
+});
+
+test('pause freezes the simulation', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.step(10);
+  const t = G.game.t, y = G.game.elev.y;
+  G.paused = true;
+  G.keys.add('arrowup'); G.step(60); G.keys.delete('arrowup');
+  assert.equal(G.game.t, t, 'time stands still');
+  assert.equal(G.game.elev.y, y, 'the car does not move');
+  G.paused = false;
+  G.step(10);
+  assert.ok(G.game.t > t, 'resumes cleanly');
+});
+
+test('holding R abandons the run; a tap does not', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.run.parts = 42;
+  G.keys.add('r'); G.step(3); G.keys.delete('r');   // a tap (~50ms)
+  assert.equal(G.run.parts, 42, 'tap does nothing');
+  G.keys.add('r'); G.step(70); G.keys.delete('r');  // held > 1s
+  assert.notEqual(G.run.parts, 42, 'held R starts a fresh career');
+  assert.equal(G.run.shiftNum, 1, 'back on shift 1');
+});
+
+test('opening the doors seats the car level with the floor', (G) => {
+  G.run = G.newRun(); G.startShift();
+  const e = G.game.elev;
+  e.y = 2 * G.CFG.floorHeight + 10;   // misaligned but within tolerance
+  e.v = 18;                            // under stopSpeed: doors may open
+  e.doorTarget = 1; e.doors = 1;
+  G.step(60);
+  assert.ok(Math.abs(e.y - 2 * G.CFG.floorHeight) < 1, `car settles level (y off by ${(e.y - 340).toFixed(1)})`);
+  assert.equal(e.v, 0, 'no creeping with the doors open');
+});
+
+test('surviving a shift persists lifetime stats immediately', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.game.delivered = G.game.quota;
+  G.update(1 / 60);                    // endShift('quota') fires
+  assert.equal(G.game.state, 'SHIFT_DONE');
+  const reloaded = G.loadSave();
+  assert.equal(reloaded.stats.shifts, 1, 'shift recorded on disk before the run ends');
 });
 
 test('Tip Jar adds to every fare; Reinforced adds a strike', (G) => {
@@ -358,10 +464,10 @@ test('a full career plays many shifts through the live loop without breaking', (
       if (riders.length) { goOpen(riders[0].dest); shut(); }
       else if (waiting.length) { goOpen(0); shut(); }
       else { shut(); G.step(20); }
+    } else if (st === 'LEVELUP') {
+      G.pickLevel(G.game.levelUp.choices[0]);     // take whatever's on top
     } else if (st === 'SHIFT_DONE') {
       G.openShop();
-      for (const u of G.UPGRADES)
-        if (G.run.up[u.key] < u.max && G.run.parts >= u.costs[G.run.up[u.key]]) G.buyUpgrade(u);
       G.startShift();
     } else if (st === 'SPIDER') {
       G.keys.add('arrowup'); G.step(3); G.keys.delete('arrowup'); G.step(100);

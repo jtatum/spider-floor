@@ -17,7 +17,10 @@ Open `index.html` in a browser (or serve the folder and visit it). No build step
 - **↑ / ↓** — crank the car up / down. It's a flywheel: let go and it *coasts*.
   Reverse-crank to brake. Stopping on a floor is the whole skill.
 - **SPACE** — open / close the doors (only when stopped **and** aligned).
-- **M** — on the title screen, open the **Workshop**.
+- **P / ESC** — pause (the game also pauses itself when the window loses focus).
+- **M** — mute / unmute (remembered between sessions).
+- **W** — on the title screen, open the **Workshop**; **A** for achievements.
+- **hold R** — abandon the run and start over (a tap does nothing).
 
 A rider's floor is shown when they're in the lobby, then **fades to "?"** a few
 seconds after they board — so you have to remember. Doors open only when the car
@@ -25,9 +28,14 @@ is stopped and level with a floor. Hit the shift's quota to survive; run out of
 strikes and you're fired.
 
 ### Loops
-- **In a run** — earn ◆ parts per fare; spend them between shifts in the Parts
-  Shop on relief upgrades (auto-leveling, a dispatch board that posts rider
-  floors again, a floor counter, quicker doors, a bigger cabin…) and Spare Fuses.
+- **In a shift** — every delivery earns **XP**; a full bar freezes the game for a
+  **level-up: pick 1 of 3** relief upgrades (auto-leveling, a dispatch board that
+  posts rider floors again, quicker doors, a bigger cabin…) that install on the
+  spot. Builds live in slots — **5 machine fittings + 4 operator habits** — so
+  once a rack is full, level-ups only deepen what you own. One paid reroll per
+  level-up, and once per run you may **banish** (B) a part from the pool forever.
+- **Between shifts** — ◆ parts from fares buy consumables in the Parts Shop:
+  Spare Fuses and one-shot specials (espresso, spider tip-offs, night classes…).
 - **Across runs** — surviving earns ★ stars. Spend them in the **Workshop** on
   permanent perks that make each new career start less hopeless.
 - **The Spider Floor** — occasionally a webbed floor opens *below the lobby*.

@@ -36,7 +36,29 @@ const CFG = {
   stopSpeed: 22,
   rememberTime: 2.8,      // seconds a rider's floor stays "remembered"
   strikesAllowed: 3,
+  // ── leveling (the Vampire-Survivors heartbeat): deliveries → XP → pick-1-of-3 ──
+  xpDeliver: 9,           // flat XP per delivery
+  xpPerFare: 3,           // + XP per ◆ of the fare (rich fares teach you more)
+  xpSpider: 6,            // XP per spider slain on the Spider Floor
+  xpBase: 24,             // first level-up costs this…
+  xpGrowth: 9,            // …and each one after costs this much more
 };
+
+// Build slots — you can't learn everything. Fittings are machine parts; habits
+// are operator skills. Once a category is full, level-ups only deepen what you own.
+const FITTING_SLOTS = 5;
+const HABIT_SLOTS = 4;
+
+function xpCost(level) { return CFG.xpBase + level * CFG.xpGrowth; }
+function gainXP(amount) {
+  run.xp += amount;
+  while (run.xp >= run.xpNext) {
+    run.xp -= run.xpNext;
+    run.level++;
+    run.levelPending++;
+    run.xpNext = xpCost(run.level);
+  }
+}
 
 // Floor numbers are fixed, but the LANDMARK on each floor is shuffled every
 // career — so you re-learn the building each run (and can't lean on muscle
@@ -133,6 +155,10 @@ const UPGRADES = [
   { key: 'reinforced',name: 'Reinforced Car', tag: 'guard', max: 1, costs: [10],
     blurb: ['One extra strike before you\'re fired (this run).'] },
 ];
+// slot category: machine FITTINGS vs operator HABITS (people skills)
+const HABIT_KEYS = ['tipjar', 'surge', 'cushions', 'muzak', 'coffee', 'apology', 'lucky', 'powercell'];
+for (const u of UPGRADES) u.kind = HABIT_KEYS.includes(u.key) ? 'habit' : 'fitting';
+
 const UP_TAGS = {
   move:  { name: 'MOTION',   color: '#6ab8ff' },
   door:  { name: 'DOORS',    color: '#7adf9a' },
@@ -240,9 +266,9 @@ const META = [
   { key: 'greaseMonkey',  name: 'Grease Monkey',    max: 1, costs: [8],
     blurb: ['Every run starts with quicker base doors.'] },
   { key: 'bigShop',       name: 'Connections',      max: 2, costs: [7, 11],
-    blurb: ['The shop offers +1 choice each visit.', 'The shop offers +2 choices.'] },
+    blurb: ['Every level-up offers +1 choice.', 'Every level-up offers +2 choices.'] },
   { key: 'rerollToken',   name: 'Haggler',          max: 2, costs: [6, 9],
-    blurb: ['Begin each shop visit with 1 free reroll.', 'Begin each visit with 2 free rerolls.'] },
+    blurb: ['1 free level-up reroll each shift.', '2 free rerolls each shift.'] },
   { key: 'hazardPay',     name: 'Hazard Pay',       max: 2, costs: [7, 11],
     blurb: ['Achievement payouts are 25% bigger.', 'Achievement payouts are 50% bigger.'] },
   { key: 'reputation',    name: 'Reputation',       max: 2, costs: [4, 7],
@@ -305,7 +331,7 @@ function defaultStats() {
 function defaultSave() {
   const meta = {};
   for (const m of META) meta[m.key] = 0;
-  return { stars: 0, meta, best: { shifts: 0, delivered: 0 }, stats: defaultStats(), ach: {}, beatBoss: false };
+  return { stars: 0, meta, best: { shifts: 0, delivered: 0 }, stats: defaultStats(), ach: {}, beatBoss: false, muted: false };
 }
 function loadSave() {
   const def = defaultSave();
@@ -365,6 +391,12 @@ function newRun() {
     up,
     parts: [0, 5, 10, 15, 20][meta.severance] ?? 0,
     rerolls: 0,
+    banishes: 1,       // once per run: strike an upgrade from the draft pool for good
+    banished: [],
+    level: 0,          // run-long XP track: deliveries fill it, level-ups spend it
+    xp: 0,
+    xpNext: xpCost(0),
+    levelPending: 0,   // earned level-ups waiting to be picked
     shiftNum: 0,
     totalDelivered: 0,
     fuses: 0,          // consumable: each forgives one walk-off
@@ -418,6 +450,7 @@ function shiftParams(n) {
 
 function startShift() {
   menu = null;
+  paused = false;
   run.shiftNum++;
   const sp = shiftParams(run.shiftNum);
   const active = [];
@@ -457,6 +490,8 @@ function startShift() {
     spiderGame: null,
     apologyUsed: false,
     walkoffsThisShift: 0,
+    lvRerolls: save.meta.rerollToken || 0,   // Haggler: free level-up rerolls, per shift
+    levelUp: null,                           // the open pick-1-of-3, when state === 'LEVELUP'
     m,
   };
 
@@ -476,6 +511,7 @@ function startShift() {
   if (ns.guaranteedSpider) { game.fx.forceSpider = true; game.spider.cooldown = 3; }
   if (ns.extraStrike) game.extraStrike = ns.extraStrike;
   if (ns.startPower) grantPower();
+  if (ns.bonusLevel) run.levelPending += ns.bonusLevel;   // Night Class
   run.nextShift = {};
   sfx.intro();
 }
@@ -516,6 +552,7 @@ function endShift(reason) {
     bumpStat('bestShiftDeliveries', game.delivered);
     bumpStat('bestRunParts', run.parts);
     checkAchievements();
+    persist();          // lifetime stats survive a closed tab, not just a firing
     game.state = 'SHIFT_DONE';
     game.doneT = 0;
     sfx.fanfare();

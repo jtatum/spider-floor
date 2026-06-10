@@ -45,9 +45,13 @@ function render() {
     }
     if (game.banner) drawBanner();
     if (game.introT > 0 && st === 'PLAYING') drawIntro();
+    if (st === 'PLAYING') drawCoach();
+    if (st === 'LEVELUP') drawLevelUp();
     if (st === 'SHIFT_DONE') drawShiftDone();
     if (st === 'FIRED') drawFired();
   }
+
+  if (paused && (st === 'PLAYING' || st === 'SPIDER' || st === 'BOSS')) drawPaused();
 
   drawToasts();
 
@@ -80,6 +84,41 @@ function drawToasts() {
     ctx.restore();
     ty += 52;
   }
+}
+
+function drawPaused() {
+  ctx.fillStyle = 'rgba(8,6,4,0.62)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#bfa45f'; ctx.font = 'bold 42px ui-monospace';
+  ctx.fillText('PAUSED', W / 2, H / 2 - 16);
+  ctx.fillStyle = '#7a6a4a'; ctx.font = '14px ui-monospace';
+  ctx.fillText('P or ESC to resume  ·  M sound', W / 2, H / 2 + 24);
+}
+
+// contextual nudges for a brand-new operator — only on shift 1 of a fresh profile
+function drawCoach() {
+  if (run.shiftNum !== 1 || save.stats.shifts > 0 || game.introT > 0) return;
+  const waiting = game.passengers.some(p => p.state === 'waiting');
+  const riding = game.passengers.some(p => p.state === 'riding');
+  let msg = null;
+  if (game.delivered === 0) {
+    if (riding) msg = 'remember their floor — the tag fades to "?" · crank ↑, reverse-crank to brake';
+    else if (waiting) msg = 'stop LEVEL with the lobby (green dot lights up) and press SPACE';
+    else msg = 'your first rider is on their way to the lobby…';
+  } else if (game.delivered === 1) {
+    msg = 'that\'s the job — now keep ahead of their patience bars';
+  }
+  if (!msg) return;
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = 'italic 14px ui-monospace';
+  ctx.fillStyle = 'rgba(13,10,8,0.8)';
+  const tw = ctx.measureText(msg).width + 28;
+  ctx.fillRect(W / 2 - tw / 2, H - 64, tw, 26);
+  ctx.fillStyle = '#9adf7a';
+  ctx.fillText(msg, W / 2, H - 51);
+  ctx.restore();
 }
 
 // soft darkened edges for depth/mood
@@ -135,7 +174,8 @@ function drawIntro() {
   ctx.font = 'bold 44px ui-monospace';
   ctx.fillText(`SHIFT ${run.shiftNum}`, W / 2, H / 2 - 58);
   ctx.font = '14px ui-monospace'; ctx.fillStyle = '#7a6a4a';
-  ctx.fillText(`deliver ${game.quota} before three walk-offs`, W / 2, H / 2 - 24);
+  const ms = maxStrikes();
+  ctx.fillText(`deliver ${game.quota} before ${['zero','one','two','three','four','five','six'][ms] || ms} walk-offs`, W / 2, H / 2 - 24);
 
   if (game.modifiers.length === 0) {
     ctx.fillStyle = '#6a7a5a'; ctx.font = 'italic 15px ui-monospace';
@@ -614,6 +654,30 @@ function drawPassenger(p, x, footY, mode) {
     ctx.fillStyle = pct > 0.5 ? '#7aaa55' : pct > 0.25 ? '#d4a050' : '#aa3a32';
     ctx.fillRect(x - 13, fy - 71, 26 * pct, 4);
   }
+
+  // the boarding SHOUT — a real speech bubble, impossible to miss
+  if (mode === 'riding' && p.shoutT > 0) {
+    const a = Math.min(1, p.shoutT / 0.35);              // fade out at the end
+    const pop = 1 + Math.max(0, (p.shoutT - 1.25) * 2.4); // a brief pop on arrival
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.translate(x, fy - 88);
+    ctx.scale(pop, pop);
+    const txt = `${destLabel}!`;
+    ctx.font = 'bold 14px ui-monospace';
+    const bw = ctx.measureText(txt).width + 16;
+    ctx.fillStyle = '#f2e8cf';
+    ctx.fillRect(-bw / 2, -11, bw, 22);
+    ctx.beginPath();                                      // the tail, toward their head
+    ctx.moveTo(-5, 11); ctx.lineTo(5, 11); ctx.lineTo(-1, 19);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#1a1410'; ctx.lineWidth = 1.5;
+    ctx.strokeRect(-bw / 2, -11, bw, 22);
+    ctx.fillStyle = '#1a1410';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(txt, 0, 1);
+    ctx.restore();
+  }
 }
 
 function drawHUD() {
@@ -624,8 +688,9 @@ function drawHUD() {
 
   ctx.textAlign = 'left'; ctx.fillStyle = '#bfa45f';
   ctx.fillText(`SHIFT ${run.shiftNum}`, 16, 18);
-  ctx.fillText(`◆ ${run.parts}`, 110, 18);
-  if (run.fuses > 0) { ctx.fillStyle = '#d4a050'; ctx.fillText(`FUSE ${run.fuses}`, 180, 18); }
+  ctx.fillStyle = '#caa33a'; ctx.fillText(`LV ${run.level + 1}`, 100, 18);
+  ctx.fillStyle = '#bfa45f'; ctx.fillText(`◆ ${run.parts}`, 162, 18);
+  if (run.fuses > 0) { ctx.fillStyle = '#d4a050'; ctx.fillText(`FUSE ${run.fuses}`, 230, 18); }
 
   // quota progress
   ctx.textAlign = 'center';
@@ -637,6 +702,10 @@ function drawHUD() {
   const dots = '●'.repeat(Math.max(0, remaining)) + '○'.repeat(game.strikes);
   ctx.fillStyle = remaining <= 1 ? '#aa3a32' : '#bfa45f';
   ctx.fillText(dots, W - 16, 18);
+
+  // XP strip — the level-up heartbeat, right under the top bar
+  ctx.fillStyle = '#241a10'; ctx.fillRect(0, 36, W, 4);
+  ctx.fillStyle = '#caa33a'; ctx.fillRect(0, 36, W * Math.min(1, run.xp / run.xpNext), 4);
 
   // crank gauge
   ctx.fillStyle = 'rgba(13,10,8,0.85)'; ctx.fillRect(0, H - 30, 224, 30);
@@ -678,6 +747,17 @@ function drawHUD() {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(pw.name, chipX + 54, 53);
     chipX += 116;
+  }
+
+  // hold-R abandon progress — visible commitment, not a surprise
+  if (game.abandonT > 0.06) {
+    const k = Math.min(1, game.abandonT / 1.0);
+    ctx.fillStyle = 'rgba(13,10,8,0.85)'; ctx.fillRect(W / 2 - 130, 86, 260, 40);
+    ctx.strokeStyle = '#aa3a32'; ctx.lineWidth = 1.5; ctx.strokeRect(W / 2 - 130, 86, 260, 40);
+    ctx.fillStyle = '#aa3a32'; ctx.font = 'bold 12px ui-monospace'; ctx.textAlign = 'center';
+    ctx.fillText('ABANDONING RUN — HOLD R', W / 2, 99);
+    ctx.fillStyle = '#3a2018'; ctx.fillRect(W / 2 - 118, 108, 236, 10);
+    ctx.fillStyle = '#e0584a'; ctx.fillRect(W / 2 - 118, 108, 236 * k, 10);
   }
 
   // active shift conditions — small tags top-left, so you remember what's in play
@@ -813,7 +893,7 @@ function drawTitle() {
   drawButton(`ACHIEVEMENTS ${got}/${ACHIEVEMENTS.length}`, W / 2 + 118, H - 128, 184, 46,
              () => { menu = 'ACH'; }, false);
   ctx.fillStyle = '#7a6a4a'; ctx.font = '11px ui-monospace'; ctx.textAlign = 'center';
-  ctx.fillText('SPACE clock in    ·    M workshop    ·    A achievements (earn ★ to spend)', W / 2, H - 64);
+  ctx.fillText(`SPACE clock in    ·    W workshop    ·    A achievements    ·    M sound ${save.muted ? 'OFF' : 'on'}`, W / 2, H - 64);
 }
 
 function drawButton(label, x, y, w, h, fn, primary) {
@@ -1222,9 +1302,10 @@ function drawWorkshop() {
 
     ctx.fillStyle = afford ? '#ffd44a' : '#4a4a5a';
     ctx.font = 'bold 13px ui-monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    if (i < 9) ctx.fillText(`${i + 1}`, cx + 9, cy + 9);
+    const hotkey = i < 9 ? `${i + 1}` : i === 9 ? '0' : null;
+    if (hotkey) ctx.fillText(hotkey, cx + 9, cy + 9);
     ctx.fillStyle = '#b9c4e0'; ctx.font = 'bold 14px ui-monospace';
-    ctx.fillText(m.name, cx + (i < 9 ? 24 : 9), cy + 8);
+    ctx.fillText(m.name, cx + (hotkey ? 24 : 9), cy + 8);
 
     for (let l = 0; l < m.max; l++) {
       ctx.fillStyle = l < lvl ? '#7aaa55' : '#2a2c38';
@@ -1243,7 +1324,7 @@ function drawWorkshop() {
 
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#6a6a82'; ctx.font = '12px ui-monospace';
-  ctx.fillText('click a perk (or press 1–9)  ·  A: achievements  ·  perks apply NEXT run', W / 2, H - 88);
+  ctx.fillText('click a perk (or press 1–9, 0)  ·  A: achievements  ·  perks apply NEXT run', W / 2, H - 88);
   drawButton('★  ACHIEVEMENTS', W / 2 - 230, H - 68, 220, 44, () => { menu = 'ACH'; }, false);
   drawButton('◂  BACK', W / 2 + 10, H - 68, 220, 44, () => { menu = null; }, true);
 }
@@ -1281,70 +1362,24 @@ function drawAchievements() {
   drawButton('◂  BACK', W / 2 - 110, H - 56, 220, 40, () => { menu = null; }, true);
 }
 
-// ── shop ──
+// ── shop: the between-shift layer — consumables, specials, and your build ──
 function drawShop() {
   ctx.fillStyle = '#0d0a08'; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#bfa45f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = 'bold 32px ui-monospace';
   ctx.fillText('THE PARTS SHOP', W / 2, 46);
   ctx.font = '13px ui-monospace'; ctx.fillStyle = '#7a6a4a';
-  ctx.fillText('pick your build — only these parts are in stock today', W / 2, 72);
+  ctx.fillText('stock up for tomorrow — your build grows on the job, one level at a time', W / 2, 72);
   ctx.fillStyle = '#d4a050'; ctx.font = 'bold 20px ui-monospace';
   ctx.fillText(`◆ ${run.parts} parts`, W / 2, 100);
 
-  // ── the drafted hand of upgrade choices ──
-  const cols = 2, cardW = 380, cardH = 80, gapX = 24, gapY = 12;
-  const totalW = cols * cardW + (cols - 1) * gapX;
-  const x0 = (W - totalW) / 2, y0 = 128;
-  const rows = Math.ceil(shop.hand.length / cols);
-  shop.hand.forEach((u, i) => {
-    const cx = x0 + (i % cols) * (cardW + gapX);
-    const cy = y0 + Math.floor(i / cols) * (cardH + gapY);
-    const lvl = run.up[u.key];
-    const maxed = lvl >= u.max;
-    const cost = maxed ? null : u.costs[lvl];
-    const afford = !maxed && run.parts >= cost;
-    const tag = UP_TAGS[u.tag] || { name: '', color: '#bfa45f' };
-
-    ctx.fillStyle = '#1a130d'; ctx.fillRect(cx, cy, cardW, cardH);
-    ctx.fillStyle = tag.color; ctx.globalAlpha = 0.10; ctx.fillRect(cx, cy, 5, cardH); ctx.globalAlpha = 1;
-    ctx.fillStyle = tag.color; ctx.fillRect(cx, cy, 5, cardH);
-    ctx.strokeStyle = maxed ? '#3a5a2a' : afford ? '#bfa45f' : '#3a2e22';
-    ctx.lineWidth = 2; ctx.strokeRect(cx, cy, cardW, cardH);
-
-    ctx.fillStyle = afford ? '#d4a050' : '#5a4a32';
-    ctx.font = 'bold 15px ui-monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    ctx.fillText(`${i + 1}`, cx + 14, cy + 11);
-    ctx.fillStyle = '#bfa45f'; ctx.font = 'bold 16px ui-monospace';
-    ctx.fillText(u.name, cx + 34, cy + 10);
-    ctx.fillStyle = tag.color; ctx.font = '9px ui-monospace';
-    ctx.fillText(tag.name, cx + 34, cy + 28);
-
-    for (let l = 0; l < u.max; l++) {
-      ctx.fillStyle = l < lvl ? '#7aaa55' : '#3a2e22';
-      ctx.fillRect(cx + cardW - 16 - (u.max - l) * 14, cy + 11, 10, 7);
-    }
-    ctx.fillStyle = '#9a8a64'; ctx.font = '12px ui-monospace';
-    wrapText(u.blurb[Math.min(lvl, u.blurb.length - 1)], cx + 34, cy + 42, cardW - 48, 14);
-
-    ctx.font = 'bold 14px ui-monospace'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
-    if (maxed) { ctx.fillStyle = '#7aaa55'; ctx.fillText('MAXED', cx + cardW - 12, cy + cardH - 10); }
-    else { ctx.fillStyle = afford ? '#d4a050' : '#7a5a3a'; ctx.fillText(`◆ ${cost}`, cx + cardW - 12, cy + cardH - 10); }
-    if (!maxed) buttons.push({ x: cx, y: cy, w: cardW, h: cardH, fn: () => buyUpgrade(u) });
-  });
-
-  // reroll the hand
-  const rrY = y0 + rows * (cardH + gapY) - 2;
-  const rrFree = run.rerolls > 0;
-  ctx.textAlign = 'center';
-  drawButton(rrFree ? `↻ REROLL  (free ×${run.rerolls})` : `↻ REROLL  (◆${REROLL_COST})`,
-             W / 2 - 130, rrY, 260, 34, rerollShop, false);
+  const totalW = 784, x0 = (W - totalW) / 2;
 
   // ── the rotating shelf: Spare Fuse + two one-shot specials ──
-  const shelfY = rrY + 46;
-  const itemGap = 12, itemW = (totalW - 2 * itemGap) / 3, itemH = 58;
+  const shelfY = 148;
+  const itemGap = 12, itemW = (totalW - 2 * itemGap) / 3, itemH = 64;
   ctx.fillStyle = '#6a6a4a'; ctx.font = '11px ui-monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-  ctx.fillText("ONE-SHOT EXTRAS", x0, shelfY - 4);
+  ctx.fillText("TODAY'S SHELF", x0, shelfY - 6);
   const shelf = [
     { key: 'F', name: 'Spare Fuse', cost: FUSE_COST, blurb: `Forgive one walk-off. Carrying ${run.fuses}.`, fn: buyFuse, bought: false },
     ...shop.offers.map((s, i) => ({ key: i === 0 ? 'Z' : 'X', name: s.name, cost: s.cost, blurb: s.blurb,
@@ -1365,13 +1400,124 @@ function drawShop() {
     else { ctx.fillStyle = afford ? '#d4a050' : '#7a5a3a'; ctx.fillText(`◆ ${it.cost}`, ix + itemW - 10, shelfY + itemH - 8); }
     if (!it.bought) buttons.push({ x: ix, y: shelfY, w: itemW, h: itemH, fn: it.fn });
   });
+  const rrSpent = shop.paidRerolls >= PAID_REROLLS_PER_VISIT;
+  drawButton(rrSpent ? '↻ RESTOCK  (used)' : `↻ RESTOCK SHELF  (◆${REROLL_COST})`,
+             W / 2 - 130, shelfY + itemH + 12, 260, 32, rerollShop, false);
+
+  // ── your build so far: fittings and habits, with levels ──
+  const by = shelfY + itemH + 64;
+  drawBuildPanel(x0, by, totalW);
 
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#7a6a4a'; ctx.font = '12px ui-monospace';
-  ctx.fillText('click or press the key  ·  R reroll  ·  F fuse  ·  Z / X specials', W / 2, H - 92);
+  ctx.fillText('click or press the key  ·  F fuse  ·  Z / X specials  ·  R restock', W / 2, H - 92);
   const nextQ = shiftParams(run.shiftNum + 1).quota;
   drawButton(`START SHIFT ${run.shiftNum + 1}  (quota ${nextQ})  ▸`,
              W / 2 - 170, H - 72, 340, 44, () => startShift(), true);
+}
+
+// the run's build at a glance — owned parts as chips, open slots as hollow boxes
+function drawBuildPanel(x0, y, totalW) {
+  const colW = (totalW - 20) / 2;
+  const groups = [
+    { title: `FITTINGS  ${slotsUsed('fitting')}/${FITTING_SLOTS}`, kind: 'fitting', x: x0 },
+    { title: `HABITS  ${slotsUsed('habit')}/${HABIT_SLOTS}`,       kind: 'habit',   x: x0 + colW + 20 },
+  ];
+  for (const g of groups) {
+    ctx.fillStyle = '#6a6a4a'; ctx.font = '11px ui-monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+    ctx.fillText(g.title, g.x, y - 4);
+    const owned = UPGRADES.filter(u => u.kind === g.kind && run.up[u.key] > 0);
+    const cap = g.kind === 'habit' ? HABIT_SLOTS : FITTING_SLOTS;
+    let cy = y + 2;
+    for (let i = 0; i < cap; i++) {
+      const u = owned[i];
+      if (u) {
+        const tag = UP_TAGS[u.tag] || { color: '#bfa45f' };
+        ctx.fillStyle = '#1a130d'; ctx.fillRect(g.x, cy, colW, 26);
+        ctx.fillStyle = tag.color; ctx.fillRect(g.x, cy, 4, 26);
+        ctx.strokeStyle = '#3a2e22'; ctx.lineWidth = 1; ctx.strokeRect(g.x + 0.5, cy + 0.5, colW - 1, 25);
+        ctx.fillStyle = '#bfa45f'; ctx.font = 'bold 13px ui-monospace';
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        ctx.fillText(u.name, g.x + 12, cy + 13);
+        for (let l = 0; l < u.max; l++) {
+          ctx.fillStyle = l < run.up[u.key] ? '#7aaa55' : '#3a2e22';
+          ctx.fillRect(g.x + colW - 12 - (u.max - l) * 12, cy + 10, 8, 6);
+        }
+      } else {
+        ctx.strokeStyle = '#2a2218'; ctx.lineWidth = 1;
+        ctx.strokeRect(g.x + 0.5, cy + 0.5, colW - 1, 25);
+        ctx.fillStyle = '#4a3e2c'; ctx.font = 'italic 11px ui-monospace';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('open slot', g.x + colW / 2, cy + 13);
+      }
+      cy += 31;
+    }
+  }
+}
+
+// ── mid-shift level-up: the game holds its breath while you pick 1 of 3 ──
+function drawLevelUp() {
+  const lv = game.levelUp;
+  if (!lv) return;
+  ctx.fillStyle = 'rgba(8,6,4,0.80)'; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 34px ui-monospace';
+  ctx.fillText(`LEVEL ${run.level + 1}`, W / 2, 86);
+  ctx.fillStyle = '#9a8a64'; ctx.font = '13px ui-monospace';
+  ctx.fillText(lv.banishMode ? '' : 'pick one — it installs immediately', W / 2, 114);
+  if (lv.banishMode) {
+    ctx.fillStyle = '#e0584a'; ctx.font = 'bold 14px ui-monospace';
+    ctx.fillText('✕ BANISH: pick a part you never want offered again this run', W / 2, 114);
+  }
+
+  const cardW = 520, cardH = 78, gapY = 12;
+  const x0 = (W - cardW) / 2, y0 = 148;
+  lv.choices.forEach((u, i) => {
+    const cy = y0 + i * (cardH + gapY);
+    const lvl = run.up[u.key];
+    const isNew = lvl === 0;
+    const tag = UP_TAGS[u.tag] || { name: '', color: '#bfa45f' };
+
+    ctx.fillStyle = '#1a130d'; ctx.fillRect(x0, cy, cardW, cardH);
+    ctx.fillStyle = tag.color; ctx.fillRect(x0, cy, 5, cardH);
+    ctx.strokeStyle = lv.banishMode ? '#e0584a' : '#bfa45f';
+    ctx.lineWidth = 2; ctx.strokeRect(x0, cy, cardW, cardH);
+
+    ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 16px ui-monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText(`${i + 1}`, x0 + 14, cy + 11);
+    ctx.fillStyle = '#e8dcc0'; ctx.font = 'bold 16px ui-monospace';
+    ctx.fillText(u.name, x0 + 36, cy + 10);
+    ctx.fillStyle = tag.color; ctx.font = '9px ui-monospace';
+    ctx.fillText(`${tag.name} · ${u.kind === 'habit' ? 'HABIT' : 'FITTING'}`, x0 + 36, cy + 29);
+    // NEW vs next-level chip
+    ctx.font = 'bold 11px ui-monospace'; ctx.textAlign = 'right';
+    ctx.fillStyle = isNew ? '#7adf9a' : '#d8b24a';
+    ctx.fillText(isNew ? 'NEW' : `Lv${lvl} → Lv${lvl + 1}`, x0 + cardW - 12, cy + 11);
+    for (let l = 0; l < u.max; l++) {
+      ctx.fillStyle = l < lvl ? '#7aaa55' : '#3a2e22';
+      ctx.fillRect(x0 + cardW - 14 - (u.max - l) * 13, cy + 26, 9, 6);
+    }
+    ctx.fillStyle = '#9a8a64'; ctx.font = '12px ui-monospace';
+    wrapText(u.blurb[Math.min(lvl, u.blurb.length - 1)], x0 + 36, cy + 46, cardW - 56, 14);
+    buttons.push({ x: x0, y: cy, w: cardW, h: cardH,
+                   fn: () => lv.banishMode ? banishLevel(u) : pickLevel(u) });
+  });
+
+  const rowY = y0 + lv.choices.length * (cardH + gapY) + 6;
+  const rrFree = game.lvRerolls > 0;
+  const rrSpent = !rrFree && lv.paidRerolls >= 1;
+  drawButton(rrFree ? `↻ REROLL (free ×${game.lvRerolls})` : rrSpent ? '↻ REROLL (used)' : `↻ REROLL (◆${REROLL_COST})`,
+             W / 2 - 268, rowY, 168, 32, rerollLevel, false);
+  drawButton(run.banishes > 0 ? (lv.banishMode ? '✕ BANISH — cancel' : `✕ BANISH (×${run.banishes})`) : '✕ BANISH (used)',
+             W / 2 - 88, rowY, 176, 32,
+             () => { if (run.banishes > 0) { lv.banishMode = !lv.banishMode; sfx.door(); } else sfx.buzz(); }, false);
+  drawButton('SKIP  (+2 ◆)', W / 2 + 100, rowY, 168, 32, skipLevel, false);
+
+  ctx.fillStyle = '#7a6a4a'; ctx.font = '12px ui-monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('1-9 pick · R reroll · B banish · S skip', W / 2, rowY + 52);
 }
 
 function wrapText(text, x, y, maxW, lh) {

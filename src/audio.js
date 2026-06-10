@@ -5,17 +5,37 @@
 // Tiny procedural synth — no asset files. Created lazily on first input.
 
 const sfx = (() => {
-  let ac = null, master = null;
+  let ac = null, master = null, muted = false;
+  let mOsc = null, mGain = null;          // the motor: a persistent hum that tracks speed
   function ensure() {
     if (ac) return;
     try {
       ac = new (window.AudioContext || window.webkitAudioContext)();
-      master = ac.createGain(); master.gain.value = 0.32; master.connect(ac.destination);
+      master = ac.createGain(); master.gain.value = muted ? 0 : 0.32; master.connect(ac.destination);
     } catch (e) { ac = null; }
   }
   function resume() { ensure(); if (ac && ac.state === 'suspended') ac.resume(); }
-  function tone(freq, dur, type = 'square', vol = 0.5, slideTo = null) {
+  function setMuted(m) {
+    muted = m;
+    if (master) master.gain.value = m ? 0 : 0.32;
+  }
+  // called every frame with 0..1 = |speed| / maxSpeed (0 when idle/paused/menus)
+  function setMotor(level) {
     if (!ac) return;
+    if (!mOsc) {
+      if (level <= 0.02) return;          // don't build the rig until it's needed
+      mOsc = ac.createOscillator(); mGain = ac.createGain();
+      mOsc.type = 'triangle'; mOsc.frequency.value = 36;
+      mGain.gain.value = 0;
+      mOsc.connect(mGain); mGain.connect(master);
+      mOsc.start();
+    }
+    const t = ac.currentTime;
+    mGain.gain.setTargetAtTime(Math.min(1, level) * 0.17, t, 0.07);
+    mOsc.frequency.setTargetAtTime(34 + level * 62, t, 0.07);
+  }
+  function tone(freq, dur, type = 'square', vol = 0.5, slideTo = null) {
+    if (!ac || muted) return;
     const t = ac.currentTime;
     const o = ac.createOscillator(), g = ac.createGain();
     o.type = type; o.frequency.setValueAtTime(freq, t);
@@ -27,7 +47,8 @@ const sfx = (() => {
     o.start(t); o.stop(t + dur + 0.02);
   }
   return {
-    resume,
+    resume, setMuted, setMotor,
+    creak() { tone(170 + Math.random() * 70, 0.13, 'sawtooth', 0.12, 65 + Math.random() * 20); },
     ding()  { tone(880, 0.12, 'sine', 0.5); tone(1320, 0.16, 'sine', 0.3); },
     near()  { tone(1040, 0.05, 'sine', 0.25); },
     board() { tone(440, 0.07, 'square', 0.35, 560); },
@@ -49,4 +70,6 @@ const sfx = (() => {
     tip()   { tone(784, 0.07, 'sine', 0.5); tone(1175, 0.12, 'sine', 0.4, 1320); },
   };
 })();
+
+sfx.setMuted(save.muted);   // honour the saved preference from the first note
 

@@ -9,10 +9,46 @@ function loop(now) {
   lastT = now;
   update(dt);
   render();
+  // the motor hums with the car's speed — silent in menus and while paused
+  const motorLevel = (!paused && game && game.state === 'PLAYING' && !menu)
+    ? Math.abs(game.elev.v) / game.m.maxSpeed : 0;
+  sfx.setMotor(motorLevel);
+  updateHint();
   if (touchEnabled) updateTouchUI();
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
+
+// tab away mid-shift → the building waits for you
+window.addEventListener('blur', () => {
+  if (!menu && game && (game.state === 'PLAYING' || game.state === 'SPIDER' || game.state === 'BOSS')) {
+    paused = true;
+  }
+});
+
+// the hint line under the canvas follows the current screen
+const hintEl = document.getElementById('hint');
+let lastHint = '';
+const HINTS = {
+  PAUSED:   'PAUSED · P resume · M sound',
+  TITLE:    'SPACE clock in · W workshop · A achievements · M sound',
+  PLAYING:  '↑/↓ crank · SPACE doors · P pause · hold R abandon run',
+  SPIDER:   '←/→ move · SPACE swing · ↑ at the door to bail out',
+  BOSS:     '↑/↓ crank · ram it when it drops · dodge the red',
+  SHOP:     'F fuse · Z/X specials · R restock · ENTER start',
+  LEVELUP:  '1-9 pick · R reroll · B banish · S skip (+2◆)',
+  WORKSHOP: '1-9/0 buy a perk · A achievements · ESC back',
+  ACH:      'ESC back',
+  SHIFT_DONE: 'SPACE shop',
+  FIRED:    'SPACE clock in again · W workshop',
+  VICTORY:  'SPACE clock out',
+};
+function updateHint() {
+  if (!hintEl) return;
+  const st = paused ? 'PAUSED' : (menu || (game ? game.state : 'TITLE'));
+  const text = HINTS[st] || HINTS.TITLE;
+  if (text !== lastHint) { lastHint = text; hintEl.textContent = text; }
+}
 
 // fit canvas to viewport while keeping internal resolution
 function fit() {

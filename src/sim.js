@@ -14,28 +14,50 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
 
+let paused = false;
+
+function toggleMute() {
+  save.muted = !save.muted;
+  sfx.setMuted(save.muted);
+  persist();
+  if (game && game.state === 'PLAYING') {
+    game.banner = { text: save.muted ? 'SOUND OFF' : 'SOUND ON', t: 1.0, color: '#7a6a4a' };
+  }
+}
+
 function handleKey(k) {
   const st = menu || (game ? game.state : 'TITLE');
 
+  if (k === 'm') { toggleMute(); return; }     // mute works everywhere
+  const pausable = !menu && (st === 'PLAYING' || st === 'SPIDER' || st === 'BOSS');
+  if (paused) {                                 // frozen: only resume gets through
+    if (k === 'p' || k === 'escape') paused = false;
+    return;
+  }
+  if (pausable && (k === 'p' || k === 'escape')) { paused = true; return; }
+
   if (st === 'WORKSHOP') {
-    if (k === 'enter' || k === 'escape' || k === 'm') { menu = null; return; }
+    if (k === 'enter' || k === 'escape' || k === 'w') { menu = null; return; }
     if (k === 'a') { menu = 'ACH'; return; }
-    if (k >= '1' && k <= '9') { const i = parseInt(k, 10) - 1; if (i < META.length) buyMeta(META[i]); }
+    if (k >= '0' && k <= '9') {
+      const i = k === '0' ? 9 : parseInt(k, 10) - 1;
+      if (i < META.length) buyMeta(META[i]);
+    }
     return;
   }
   if (st === 'ACH') {
-    if (k === 'enter' || k === 'escape' || k === 'a' || k === 'm') { menu = null; return; }
+    if (k === 'enter' || k === 'escape' || k === 'a' || k === 'w') { menu = null; return; }
     return;
   }
   if (st === 'TITLE') {
     if (k === ' ' || k === 'enter') { run = newRun(); startShift(); }
-    if (k === 'm') { menu = 'WORKSHOP'; }
+    if (k === 'w') { menu = 'WORKSHOP'; }
     if (k === 'a') { menu = 'ACH'; }
     return;
   }
   if (st === 'FIRED') {
     if (k === ' ' || k === 'enter') { menu = null; game.bossLost = false; game.state = 'TITLE'; }
-    if (k === 'm') { menu = 'WORKSHOP'; }
+    if (k === 'w') { menu = 'WORKSHOP'; }
     if (k === 'a') { menu = 'ACH'; }
     return;
   }
@@ -51,19 +73,30 @@ function handleKey(k) {
   }
   if (st === 'SHOP') {
     if (k === 'enter') { startShift(); return; }
-    if (k >= '1' && k <= '9') {
-      const i = parseInt(k, 10) - 1;
-      if (i < shop.hand.length) buyUpgrade(shop.hand[i]);
-    }
     if (k === 'f') buyFuse();
     if (k === 'z') buySpecial(shop.offers[0]);
     if (k === 'x') buySpecial(shop.offers[1]);
     if (k === 'r') rerollShop();
     return;
   }
+  if (st === 'LEVELUP') {
+    const lv = game.levelUp;
+    if (!lv) return;
+    if (k >= '1' && k <= '9') {
+      const i = parseInt(k, 10) - 1;
+      if (i < lv.choices.length) (lv.banishMode ? banishLevel : pickLevel)(lv.choices[i]);
+    }
+    if (k === 'r') rerollLevel();
+    if (k === 's') skipLevel();
+    if (k === 'b') {
+      if (run.banishes > 0) { lv.banishMode = !lv.banishMode; sfx.door(); }
+      else sfx.buzz();
+    }
+    return;
+  }
   if (st === 'PLAYING') {
     if (k === ' ') toggleDoors();
-    if (k === 'r') { run = newRun(); startShift(); }
+    // (restarting mid-run is hold-R, handled in update — a tap can't wipe a career)
   }
 }
 
@@ -196,6 +229,7 @@ function spawnPassenger() {
 // ────────────────────────────────────────────────────────────── update
 
 function update(dt) {
+  if (paused) return;                 // P / ESC — the building holds its breath
   if (achToasts.length) { for (const t of achToasts) t.t -= dt; achToasts = achToasts.filter(t => t.t > 0); }
   if (game && game.flash) { game.flash.t -= dt; if (game.flash.t <= 0) game.flash = null; }
   if (game && game.shake > 0) game.shake = Math.max(0, game.shake - dt * 25);
@@ -209,6 +243,12 @@ function update(dt) {
   if (!game || game.state !== 'PLAYING') return;
   game.t += dt;
   game.shiftTime += dt;
+
+  // hold R to abandon the run — a tap does nothing, so no fat-fingered wipes
+  if (keys.has('r')) {
+    game.abandonT = (game.abandonT || 0) + dt;
+    if (game.abandonT >= 1.0) { keys.delete('r'); run = newRun(); startShift(); return; }
+  } else game.abandonT = 0;
   if (game.introT > 0) game.introT = Math.max(0, game.introT - dt);
   const e = game.elev;
   const m = game.m;
@@ -244,11 +284,25 @@ function update(dt) {
     if (keys.has('arrowup') || keys.has('w')) input += 1;
     if (keys.has('arrowdown') || keys.has('s')) input -= 1;
   }
-  if (input !== 0) {
+  if (!canMove) {
+    // doors unlatched: the car seats itself on the landing instead of creeping
+    // off-level with the doors open (you can open while drifting < stopSpeed)
+    const anchorY = (sp.open && Math.abs(e.y - SPIDER_Y) < CFG.floorHeight * 0.5)
+      ? SPIDER_Y : nearestFloorIdx(e.y) * CFG.floorHeight;
+    e.v = 0;
+    e.y += (anchorY - e.y) * Math.min(1, 12 * dt);
+    if (Math.abs(anchorY - e.y) < 0.5) e.y = anchorY;
+  } else if (input !== 0) {
     // cranking with the grain accelerates; against it, the reverse-crank brakes
     const braking = Math.sign(input) !== Math.sign(e.v) && Math.abs(e.v) > 1;
     const brakeA = m.brakeAccel * (game.brakeBoost || 1);
     e.v += input * (braking ? brakeA : accelE) * dt;
+    // hard reverse-cranking makes the cables complain
+    game.creakCool = Math.max(0, (game.creakCool || 0) - dt);
+    if (braking && Math.abs(e.v) > 140 && game.creakCool <= 0) {
+      sfx.creak();
+      game.creakCool = 0.28 + Math.random() * 0.2;
+    }
   } else {
     // no input: a heavy flywheel. Barely any drag, so momentum carries you —
     // letting go does NOT stop you. "SLIPPERY CABLES" makes it glide even more.
@@ -333,12 +387,14 @@ function update(dt) {
       // patience resets to the (often kinder) ride pool when they board
       p.patience = game.m.ridePat * game.patMul * (p.kind === 'nervous' ? 0.6 : 1);
       p.patienceMax = p.patience;
+      p.shoutT = 1.5;       // they SHOUT the floor as they step in — a speech bubble
       sfx.board();
     }
   }
 
   for (const p of game.passengers) {
     p.bob += dt * 2.2;
+    if (p.shoutT > 0) p.shoutT -= dt;
     if (p.state === 'waiting') {
       p.patience -= dt * patDrain;
       if (p.patience <= 0) losePassenger(p);
@@ -356,6 +412,7 @@ function update(dt) {
         fare = Math.max(1, fare);
         run.parts += fare;
         game.partsThisShift += fare;
+        gainXP(CFG.xpDeliver + CFG.xpPerFare * fare);   // rich fares teach you more
         // achievement stats
         save.stats.deliveries++;
         if (p.kind === 'vip') save.stats.vips++;
@@ -381,7 +438,88 @@ function update(dt) {
   });
 
   if (game.strikes >= maxStrikes()) { endShift('fired'); return; }
+  // an earned level-up interrupts before the shift can close — you always get your pick
+  if (run.levelPending > 0) { openLevelUp(); return; }
   if (game.delivered >= game.quota) { endShift('quota'); return; }
+}
+
+// ─────────────────────────────────────────── mid-shift level-ups
+// The Vampire-Survivors heartbeat: XP from deliveries → the game freezes →
+// pick 1 of 3. Slots cap how many DISTINCT parts you can own, so a build is
+// a commitment; once a category is full, level-ups only deepen what you have.
+
+function slotsUsed(kind) {
+  return UPGRADES.filter(u => u.kind === kind && run.up[u.key] > 0).length;
+}
+function eligibleUpgrades() {
+  return UPGRADES.filter(u => {
+    if (run.up[u.key] >= u.max || run.banished.includes(u.key)) return false;
+    if (run.up[u.key] > 0) return true;     // deepening what you own is always allowed
+    const cap = u.kind === 'habit' ? HABIT_SLOTS : FITTING_SLOTS;
+    return slotsUsed(u.kind) < cap;
+  });
+}
+function levelChoices(n) { return shuffle(eligibleUpgrades()).slice(0, n); }
+
+function openLevelUp() {
+  run.levelPending--;
+  const choices = levelChoices(3 + (save.meta.bigShop || 0));
+  if (!choices.length) {                    // fully built: the level cashes out
+    run.parts += 3;
+    floatText('+3 ◆', '#d4a050');
+    return;
+  }
+  game.levelUp = { choices, banishMode: false, paidRerolls: 0 };
+  game.state = 'LEVELUP';
+  sfx.power();
+}
+function pickLevel(u) {
+  run.up[u.key]++;
+  if (run.up[u.key] >= u.max) {
+    save.stats.everMaxed++;
+    run.maxedThisRun = (run.maxedThisRun || 0) + 1;
+    bumpStat('bestMaxedRun', run.maxedThisRun);
+    checkAchievements();
+  }
+  game.m = mods();                          // relief applies NOW, mid-shift
+  game.levelUp = null;
+  game.state = 'PLAYING';
+  const tag = UP_TAGS[u.tag] || { color: '#bfa45f' };
+  game.banner = { text: run.up[u.key] > 1 ? `${u.name}  Lv${run.up[u.key]}` : `${u.name} INSTALLED`,
+                  t: 1.5, color: tag.color };
+  sfx.buy();
+}
+function skipLevel() {
+  run.parts += 2;
+  game.levelUp = null;
+  game.state = 'PLAYING';
+  floatText('+2 ◆', '#d4a050');
+  sfx.chime();
+}
+function rerollLevel() {
+  const lv = game.levelUp;
+  if (game.lvRerolls > 0) game.lvRerolls--;
+  else if (lv.paidRerolls < 1 && run.parts >= REROLL_COST) { run.parts -= REROLL_COST; lv.paidRerolls++; }
+  else { sfx.buzz(); return; }
+  lv.choices = levelChoices(lv.choices.length);
+  sfx.buy();
+}
+// banish: strike a part from this run's pool forever (1 per run). The card is
+// replaced in the current choices, so banishing never costs you the pick.
+function banishLevel(u) {
+  if (run.banishes <= 0 || run.banished.includes(u.key)) { sfx.buzz(); return; }
+  run.banishes--;
+  run.banished.push(u.key);
+  const lv = game.levelUp;
+  lv.banishMode = false;
+  const i = lv.choices.indexOf(u);
+  const pool = eligibleUpgrades().filter(x => !lv.choices.includes(x));
+  if (i >= 0) {
+    if (pool.length) lv.choices[i] = pool[Math.floor(Math.random() * pool.length)];
+    else lv.choices.splice(i, 1);
+  }
+  if (!lv.choices.length) { skipLevel(); return; }
+  sfx.slash();
 }
 
 function losePassenger(p) {
@@ -524,6 +662,7 @@ function updateSpider(dt) {
     if (swinging && !s.dead && Math.abs(s.x - hx) < reach && Math.abs(s.y - hy) < 44) {
       s.dead = true; s.deadT = 0; s.vyDead = -160; s.vxDead = P.facing * 80;
       sg.loot += sg.lootPerKill; sg.killed++;
+      gainXP(CFG.xpSpider);                 // the web is a classroom too
       save.stats.spiders++; checkAchievements();
       spiderPop(sg, s.x, s.y, '#ff3a5a'); floatSpiderText(sg, s.x, s.y - 20, `+${sg.lootPerKill}`);
       sfx.slash();
@@ -716,9 +855,12 @@ function exitBoss() {
 // one-shot options you get differ run to run. Most prime the NEXT shift.
 const SPECIALS = [
   { key: 'blueprint', name: 'Spare Blueprint', cost: 7,
-    blurb: 'Install +1 level on a random fitting right now.',
-    apply() { const o = UPGRADES.filter(u => run.up[u.key] < u.max);
+    blurb: 'Install +1 level on a random part right now.',
+    apply() { const o = eligibleUpgrades();
               if (o.length) run.up[o[Math.floor(Math.random() * o.length)].key]++; } },
+  { key: 'training',  name: 'Night Class', cost: 6,
+    blurb: 'Clock in tomorrow with a level-up ready to pick.',
+    apply() { run.nextShift.bonusLevel = (run.nextShift.bonusLevel || 0) + 1; } },
   { key: 'espresso',  name: 'Crate of Espresso', cost: 4,
     blurb: 'Next shift, the whole crowd starts more patient.',
     apply() { run.nextShift.patienceBoost = 1.4; } },
@@ -736,23 +878,18 @@ const SPECIALS = [
     apply() { run.nextShift.brakeBoost = 1.7; } },
 ];
 
-// deal a fresh hand of upgrade choices (non-maxed only)
-function dealHand() {
-  const avail = UPGRADES.filter(u => run.up[u.key] < u.max);
-  const size = Math.min(avail.length, 4 + (save.meta.bigShop || 0));
-  return shuffle(avail).slice(0, size);
-}
+// The shop is the BETWEEN-shift layer now: consumables and one-shot specials.
+// Parts (◆) buy preparation; level-ups (XP) build the machine.
 function openShop() {
-  run.rerolls = save.meta.rerollToken || 0;   // free rerolls granted by the Workshop
-  shop = { hand: dealHand(), offers: shuffle(SPECIALS).slice(0, 2), bought: {} };
+  shop = { offers: shuffle(SPECIALS).slice(0, 2), bought: {}, paidRerolls: 0 };
   game.state = 'SHOP';
 }
 const REROLL_COST = 3;
+const PAID_REROLLS_PER_VISIT = 1;   // scarcity keeps the shelf a real decision
 function rerollShop() {
-  if (run.rerolls > 0) run.rerolls--;
-  else if (run.parts >= REROLL_COST) run.parts -= REROLL_COST;
-  else { sfx.buzz(); return; }
-  shop.hand = dealHand();
+  if (shop.paidRerolls >= PAID_REROLLS_PER_VISIT || run.parts < REROLL_COST) { sfx.buzz(); return; }
+  run.parts -= REROLL_COST;
+  shop.paidRerolls++;
   shop.offers = shuffle(SPECIALS).slice(0, 2);
   shop.bought = {};
   sfx.buy();
@@ -763,22 +900,6 @@ function buySpecial(s) {
   run.parts -= s.cost;
   s.apply();
   shop.bought[s.key] = true;
-  sfx.buy();
-}
-function buyUpgrade(u) {
-  const lvl = run.up[u.key];
-  if (lvl >= u.max) { sfx.buzz(); return; }
-  const cost = u.costs[lvl];
-  if (run.parts < cost) { sfx.buzz(); return; }
-  run.parts -= cost;
-  run.up[u.key]++;
-  if (run.up[u.key] >= u.max) {       // hit max → achievement stats
-    save.stats.everMaxed++;
-    run.maxedThisRun = (run.maxedThisRun || 0) + 1;
-    bumpStat('bestMaxedRun', run.maxedThisRun);
-    checkAchievements();
-  }
-  bumpStat('bestRunParts', run.parts);
   sfx.buy();
 }
 const FUSE_COST = 6;
