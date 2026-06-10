@@ -110,6 +110,25 @@ test('crank has momentum — releasing does not auto-stop', (G) => {
   assert.ok(vCoast > vRelease * 0.4, `should still be coasting (got ${Math.round(vCoast)} of ${Math.round(vRelease)})`);
 });
 
+test('Auto Doors does not soft-lock on a rider that cannot fit', (G) => {
+  G.run = G.newRun(); G.run.up.autoDoors = 1; G.startShift();
+  G.game.passengers = [];
+  for (let i = 0; i < 3; i++) addRider(G, 2, 'normal');     // 3 of 4 slots full
+  // a mover waiting at the lobby needs 2 slots — only 1 is free, so it can't board
+  G.spawnPassenger(0);
+  const mover = G.game.passengers.at(-1);
+  mover.kind = 'mover'; mover.size = 2; mover.dest = 2; mover.state = 'waiting'; mover.origin = 0;
+  const e = G.game.elev; e.y = 0; e.v = 0; e.doorTarget = 0; e.doors = 0;
+  G.step(5);
+  assert.equal(e.doorTarget, 0, 'doors are NOT auto-held for a rider that cannot board');
+  // but a rider who DOES fit still triggers auto-open (and boards)
+  G.spawnPassenger(0);
+  const fits = G.game.passengers.at(-1);
+  fits.kind = 'normal'; fits.size = 1; fits.dest = 2; fits.state = 'waiting'; fits.origin = 0;
+  G.step(50);            // long enough for auto-doors to open fully, then board
+  assert.equal(fits.state, 'riding', 'a rider that fits is auto-served and boards');
+});
+
 // ── mid-shift leveling ──────────────────────────────────────────────────────
 
 test('deliveries earn XP and a full bar opens a level-up', (G) => {

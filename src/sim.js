@@ -402,10 +402,14 @@ function update(dt) {
   const open = doorsOpen();
   const cap = capacityNow();
 
-  // Auto Doors: open themselves when you stop at a floor that needs you
+  // Auto Doors: open themselves when you stop at a floor that needs you.
+  // Only hold for a waiting rider that can ACTUALLY board — otherwise a mover
+  // that needs two slots but finds only one free would reopen the doors forever
+  // (you'd press to close, auto-doors reopens, repeat: a soft-lock).
   if (m.autoDoors && aligned && isStopped() && e.doorTarget === 0) {
     const wantsHere = game.passengers.some(p => p.state === 'riding' && p.dest === ci);
-    const callJob = slotsAboard() < cap && game.passengers.some(p => p.state === 'waiting' && p.origin === ci);
+    const callJob = game.passengers.some(p => p.state === 'waiting' && p.origin === ci &&
+                                              slotsAboard() + (p.size || 1) <= cap);
     if (wantsHere || callJob) { e.doorTarget = 1; sfx.door(); }
   }
 
