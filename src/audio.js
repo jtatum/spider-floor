@@ -96,13 +96,19 @@ const sfx = (() => {
     musicSrc = null; playCfg = null; playName = null;
   }
   // idempotent: pass a track name to ensure it's playing, or null to stop.
+  // Called every frame by the main loop, so it doubles as the retry that starts
+  // the music the instant the audio context unlocks.
   function music(name) {
-    if (name === musicCur) return;       // already in the desired state
-    musicCur = name;
     musicReq = name;
-    if (!name) { stopMusicSrc(); return; }
+    if (!name) { musicCur = null; stopMusicSrc(); return; }
     ensure();
-    if (!ac) return;
+    // Browsers block audio until a user gesture; the context starts 'suspended'.
+    // Don't build into a suspended context (it can resume muted or mid-fade) —
+    // wait until it's actually running, then start cleanly from the top. Because
+    // we only commit musicCur once running, the loop keeps retrying until unlock.
+    if (!ac || ac.state !== 'running') return;
+    if (name === musicCur) return;       // already playing/queued the right track
+    musicCur = name;
     if (!musicGain) { musicGain = ac.createGain(); musicGain.gain.value = 0; musicGain.connect(master); }
     const cfg = MUSIC[name];
     load(name).then(buf => {

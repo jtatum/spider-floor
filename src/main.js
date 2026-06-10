@@ -30,6 +30,16 @@ function loop(now) {
 }
 requestAnimationFrame(loop);
 
+// Browsers block audio until the first user gesture. Unlock on the FIRST
+// interaction ANYWHERE on the page (not just a canvas click or key) so the
+// title music starts the moment the player touches anything; the rAF loop is
+// already calling sfx.music('title'), so it begins as soon as the context runs.
+const unlockAudio = () => {
+  sfx.resume();
+  for (const ev of ['pointerdown', 'keydown', 'touchstart']) window.removeEventListener(ev, unlockAudio);
+};
+for (const ev of ['pointerdown', 'keydown', 'touchstart']) window.addEventListener(ev, unlockAudio);
+
 // tab away mid-shift → the building waits for you
 window.addEventListener('blur', () => {
   if (!menu && game && (game.state === 'PLAYING' || game.state === 'SPIDER' || game.state === 'BOSS')) {
