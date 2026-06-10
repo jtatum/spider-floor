@@ -61,8 +61,16 @@ loaded in order by `index.html`):
 | `src/data.js`   | config (`CFG`), all data tables, save/achievements, state & economy |
 | `src/sim.js`    | input, the simulation `update()`, the Spider Floor combat |
 | `src/render.js` | every `draw*` + the `render()` loop |
-| `src/audio.js`  | the tiny procedural synth (`sfx`) |
-| `src/main.js`   | the rAF loop, canvas fit, touch controls |
+| `src/audio.js`  | the procedural synth (`sfx`) **and** the looping music layer |
+| `src/main.js`   | the rAF loop, canvas fit, touch controls, music-by-screen map |
+
+Sound effects are synthesized (no asset files); **music** is streamed from
+`audio/` — each track dual-encoded as **Ogg Opus + AAC/m4a** and chosen per
+browser via `canPlayType`. Tracks loop a region seamlessly via WebAudio
+`loopStart`/`loopEnd` (sample-accurate, gapless); `MUSIC_BY_SCREEN` in
+`main.js` says which track plays where. To add or re-cut a track, encode with
+`ffmpeg -t <trim> -c:a libopus` / `-c:a aac` and add its loop points to `MUSIC`
+in `audio.js`. The build copies `audio/` into `dist/` verbatim.
 
 ```
 npm test     # headless logic tests (Node, no deps) — node tests/run.mjs

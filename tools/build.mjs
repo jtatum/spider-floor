@@ -28,6 +28,18 @@ const css = fs.readFileSync(path.join(root, 'style.css'), 'utf8');
 const cssName = `app.${hash(css)}.css`;
 fs.writeFileSync(path.join(dist, cssName), css);
 
+// copy audio/ verbatim (referenced by stable path in audio.js; large + rarely
+// changes, so we keep the filenames rather than rewriting runtime URL lookups)
+let audioCount = 0;
+const audioSrc = path.join(root, 'audio');
+if (fs.existsSync(audioSrc)) {
+  fs.mkdirSync(path.join(dist, 'audio'), { recursive: true });
+  for (const f of fs.readdirSync(audioSrc)) {
+    fs.copyFileSync(path.join(audioSrc, f), path.join(dist, 'audio', f));
+    audioCount++;
+  }
+}
+
 // rewrite index.html: one hashed script, hashed css, and DROP the no-store meta
 // (the hashed filenames are what bust the cache now — the browser may cache them
 // immutably, and a code change yields a new filename).
@@ -39,4 +51,4 @@ html = html.replace(/\s*<script src="src\/[^"]*"><\/script>/g, '');
 html = html.replace('</body>', `<script src="${jsName}"></script>\n</body>`);
 fs.writeFileSync(path.join(dist, 'index.html'), html);
 
-console.log(`built dist/ → ${jsName} (${(js.length / 1024).toFixed(1)} KB), ${cssName}`);
+console.log(`built dist/ → ${jsName} (${(js.length / 1024).toFixed(1)} KB), ${cssName}, ${audioCount} audio file(s)`);

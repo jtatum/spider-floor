@@ -34,6 +34,73 @@ const sfx = (() => {
     mGain.gain.setTargetAtTime(Math.min(1, level) * 0.17, t, 0.07);
     mOsc.frequency.setTargetAtTime(34 + level * 62, t, 0.07);
   }
+
+  // ── music: decoded tracks that loop a region seamlessly (loopStart→loopEnd) ──
+  // Files are dual-encoded (Ogg Opus + AAC/m4a); we fetch whichever the browser
+  // can decode. Routed through a dedicated gain so we can fade in/out without a
+  // hard cut, and through master so Mute covers it too.
+  const MUSIC = {
+    levelup: { base: 'audio/levelup', loopStart: 12.350, loopEnd: 60.390, gain: 0.5 },
+    shop:    { base: 'audio/shop',    loopStart: 20.299, loopEnd: 87.609, gain: 0.5 },
+  };
+  let musicGain = null, musicSrc = null, musicCur = null, musicReq = null;
+  const bufCache = {};
+
+  function pickUrl(base) {
+    // choose by what this browser will actually decode (Opus is smaller/cleaner)
+    let probe = null;
+    try { probe = typeof Audio !== 'undefined' ? new Audio() : null; } catch (e) {}
+    const can = (t) => probe && probe.canPlayType && probe.canPlayType(t) !== '';
+    if (can('audio/ogg; codecs="opus"')) return base + '.opus';
+    if (can('audio/mp4; codecs="mp4a.40.2"') || can('audio/aac')) return base + '.m4a';
+    return base + '.opus';   // a sensible default; decode may still succeed
+  }
+  async function load(name) {
+    if (bufCache[name]) return bufCache[name];
+    const url = pickUrl(MUSIC[name].base);
+    const res = await fetch(url);
+    const data = await res.arrayBuffer();
+    const buf = await ac.decodeAudioData(data);
+    bufCache[name] = buf;
+    return buf;
+  }
+  function stopMusicSrc(fade = 0.5) {
+    if (!musicSrc || !ac) return;
+    const t = ac.currentTime, src = musicSrc;
+    musicGain.gain.cancelScheduledValues(t);
+    musicGain.gain.setValueAtTime(musicGain.gain.value, t);
+    musicGain.gain.linearRampToValueAtTime(0.0001, t + fade);
+    try { src.stop(t + fade + 0.05); } catch (e) {}
+    musicSrc = null;
+  }
+  // idempotent: pass a track name to ensure it's playing, or null to stop.
+  function music(name) {
+    if (name === musicCur) return;       // already in the desired state
+    musicCur = name;
+    musicReq = name;
+    if (!name) { stopMusicSrc(); return; }
+    ensure();
+    if (!ac) return;
+    if (!musicGain) { musicGain = ac.createGain(); musicGain.gain.value = 0; musicGain.connect(master); }
+    const cfg = MUSIC[name];
+    load(name).then(buf => {
+      if (musicReq !== name) return;     // the screen changed while we were decoding
+      stopMusicSrc(0.08);
+      const src = ac.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      src.loopStart = cfg.loopStart;
+      src.loopEnd = Math.min(cfg.loopEnd, buf.duration);
+      src.connect(musicGain);
+      const t = ac.currentTime;
+      musicGain.gain.cancelScheduledValues(t);
+      musicGain.gain.setValueAtTime(0.0001, t);
+      musicGain.gain.linearRampToValueAtTime(cfg.gain, t + 0.4);   // gentle fade-in
+      src.start(0);
+      musicSrc = src;
+    }).catch(() => {});                  // a missing/undecodable file just stays silent
+  }
+
   function tone(freq, dur, type = 'square', vol = 0.5, slideTo = null) {
     if (!ac || muted) return;
     const t = ac.currentTime;
@@ -47,7 +114,7 @@ const sfx = (() => {
     o.start(t); o.stop(t + dur + 0.02);
   }
   return {
-    resume, setMuted, setMotor,
+    resume, setMuted, setMotor, music,
     creak() { tone(170 + Math.random() * 70, 0.13, 'sawtooth', 0.12, 65 + Math.random() * 20); },
     ding()  { tone(880, 0.12, 'sine', 0.5); tone(1320, 0.16, 'sine', 0.3); },
     near()  { tone(1040, 0.05, 'sine', 0.25); },

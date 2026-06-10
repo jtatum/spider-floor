@@ -3,6 +3,9 @@
 
 // ════════════════════════════════════════════════════════════ LOOP
 
+// which track plays on which screen (null/absent = silence)
+const MUSIC_BY_SCREEN = { LEVELUP: 'levelup', SHIFT_DONE: 'shop', SHOP: 'shop' };
+
 let lastT = performance.now();
 function loop(now) {
   const dt = Math.min(0.05, (now - lastT) / 1000);
@@ -13,6 +16,10 @@ function loop(now) {
   const motorLevel = (!paused && game && game.state === 'PLAYING' && !menu)
     ? Math.abs(game.elev.v) / game.m.maxSpeed : 0;
   sfx.setMotor(motorLevel);
+  // music follows the screen: the level-up jingle while you pick, and the shop
+  // theme across the survived/parts-shop flow (same track → no restart between them)
+  const st = menu || (game ? game.state : 'TITLE');
+  sfx.music(MUSIC_BY_SCREEN[st] || null);
   updateHint();
   if (touchEnabled) updateTouchUI();
   requestAnimationFrame(loop);
