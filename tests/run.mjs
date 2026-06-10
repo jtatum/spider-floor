@@ -254,6 +254,19 @@ test('operator unlocks read lifetime stats; picks are remembered', (G) => {
   assert.equal(G.game.state, 'PLAYING', 'and the shift starts');
 });
 
+// ── music loop math ──────────────────────────────────────────────────────────
+
+test('music resume position wraps correctly through the loop', (G) => {
+  const cfg = { loopStart: 10, loopEnd: 130 };   // loopLen 120
+  const pos = (sAt, sOff, now) => G.musicPosOf(cfg, sAt, sOff, now);
+  assert.equal(pos(0, 0, 5), 5, 'still in the intro before the loop point');
+  assert.equal(pos(0, 0, 130), 10, 'at loopEnd it has jumped back to loopStart');
+  assert.equal(pos(0, 0, 200), 80, 'one pass + 70s into the loop');
+  // resuming mid-loop: started at offset 80, 100s later → 80→130 (50s) then wrap +50 → 60
+  assert.equal(pos(0, 80, 100), 60, 'resumed offset advances and wraps');
+  assert.equal(pos(0, 0, 0), 0, 'the very start');
+});
+
 // ── Spider Floor ─────────────────────────────────────────────────────────────
 
 // step off the lift onto the Spider Floor ledge

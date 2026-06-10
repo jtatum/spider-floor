@@ -4,6 +4,17 @@
 // ════════════════════════════════════════════════════════════ AUDIO
 // Tiny procedural synth — no asset files. Created lazily on first input.
 
+// Buffer position of a looping source at time `now`, given when it started
+// (sAt) and the buffer offset it started at (sOff). Pure math, so it's unit-
+// tested: it's what lets a resume-capable track pick up where it left off
+// after a brief detour (level-up / spider floor) instead of restarting.
+function musicPosOf(cfg, sAt, sOff, now) {
+  const loopLen = cfg.loopEnd - cfg.loopStart;
+  let p = sOff + (now - sAt);
+  if (loopLen > 0 && p >= cfg.loopEnd) p = cfg.loopStart + ((p - cfg.loopEnd) % loopLen);
+  return p;
+}
+
 const sfx = (() => {
   let ac = null, master = null, muted = false;
   let mOsc = null, mGain = null;          // the motor: a persistent hum that tracks speed
@@ -40,11 +51,19 @@ const sfx = (() => {
   // can decode. Routed through a dedicated gain so we can fade in/out without a
   // hard cut, and through master so Mute covers it too.
   const MUSIC = {
-    levelup: { base: 'audio/levelup', loopStart: 12.350, loopEnd: 60.390, gain: 0.5 },
-    shop:    { base: 'audio/shop',    loopStart: 20.299, loopEnd: 87.609, gain: 0.5 },
+    title:    { base: 'audio/title',    loopStart: 23.810, loopEnd: 95.245,  gain: 0.5 },
+    gameplay: { base: 'audio/gameplay', loopStart: 10.719, loopEnd: 127.492, gain: 0.42, resume: true },
+    levelup:  { base: 'audio/levelup',  loopStart: 12.350, loopEnd: 60.390,  gain: 0.5 },
+    shop:     { base: 'audio/shop',     loopStart: 20.299, loopEnd: 87.609,  gain: 0.5 },
+    fired:    { base: 'audio/fired',    loopStart: 32.924, loopEnd: 90.831,  gain: 0.5 },
   };
   let musicGain = null, musicSrc = null, musicCur = null, musicReq = null;
+  // for resume-capable tracks (gameplay): remember where we left off so a brief
+  // level-up detour doesn't restart the bed from its intro every time.
+  let playName = null, playCfg = null, startedAt = 0, startOffset = 0;
+  const resumeStore = {};
   const bufCache = {};
+  const posOf = musicPosOf;
 
   function pickUrl(base) {
     // choose by what this browser will actually decode (Opus is smaller/cleaner)
@@ -67,11 +86,14 @@ const sfx = (() => {
   function stopMusicSrc(fade = 0.5) {
     if (!musicSrc || !ac) return;
     const t = ac.currentTime, src = musicSrc;
+    if (playCfg && playCfg.resume && playName) {   // bank our spot so we can resume it
+      resumeStore[playName] = posOf(playCfg, startedAt, startOffset, t);
+    }
     musicGain.gain.cancelScheduledValues(t);
     musicGain.gain.setValueAtTime(musicGain.gain.value, t);
     musicGain.gain.linearRampToValueAtTime(0.0001, t + fade);
     try { src.stop(t + fade + 0.05); } catch (e) {}
-    musicSrc = null;
+    musicSrc = null; playCfg = null; playName = null;
   }
   // idempotent: pass a track name to ensure it's playing, or null to stop.
   function music(name) {
@@ -96,8 +118,10 @@ const sfx = (() => {
       musicGain.gain.cancelScheduledValues(t);
       musicGain.gain.setValueAtTime(0.0001, t);
       musicGain.gain.linearRampToValueAtTime(cfg.gain, t + 0.4);   // gentle fade-in
-      src.start(0);
+      const offset = (cfg.resume && resumeStore[name] != null) ? resumeStore[name] : 0;
+      src.start(0, offset);
       musicSrc = src;
+      playCfg = cfg; playName = name; startedAt = t; startOffset = offset;
     }).catch(() => {});                  // a missing/undecodable file just stays silent
   }
 

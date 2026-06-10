@@ -4,7 +4,11 @@
 // ════════════════════════════════════════════════════════════ LOOP
 
 // which track plays on which screen (null/absent = silence)
-const MUSIC_BY_SCREEN = { LEVELUP: 'levelup', SHIFT_DONE: 'shop', SHOP: 'shop' };
+const MUSIC_BY_SCREEN = {
+  TITLE: 'title', OPERATOR: 'title', WORKSHOP: 'title', ACH: 'title',   // title theme covers the menu cluster
+  PLAYING: 'gameplay',                        // resumes across level-up detours (see audio.js)
+  LEVELUP: 'levelup', SHIFT_DONE: 'shop', SHOP: 'shop', FIRED: 'fired',
+};
 
 let lastT = performance.now();
 function loop(now) {
