@@ -2,10 +2,12 @@
 
 An elevator roguelike. You're the new operator of the worst lift in the tallest
 building in town — **no floor display, no dispatch screen**, just a cranky manual
-crank and your own memory. Scoop passengers from the lobby, remember the floors
-they shouted, and deliver each one before they lose patience. Survive a shift,
-earn parts, and rebuild the death-trap into a dream machine — where every upgrade
-is the sweet relief of not having to do the hard part anymore.
+crank and your own memory. Pick your operator, scoop passengers from the lobby,
+remember the floors they shouted, and deliver each one before they lose patience.
+From shift 3, **calls ring from the upper floors too** — a lamp on the door frame
+means someone up there wants down. Survive a shift, earn parts, and rebuild the
+death-trap into a dream machine — where every upgrade is the sweet relief of not
+having to do the hard part anymore.
 
 …and everyone in the building has heard about the **Spider Floor**, somewhere
 below the lobby. Brave enough to step off and find out?
@@ -28,6 +30,12 @@ is stopped and level with a floor. Hit the shift's quota to survive; run out of
 strikes and you're fired.
 
 ### Loops
+- **Operators** — pick who's on the crank each run: a minor buff and a minor
+  dent (the intern learns fast but rattles riders; the charmer can't brake…).
+  Most unlock by just playing. Patience scales with the trip being asked —
+  a penthouse haul earns more grace than a floor-2 hop.
+- **Down-riders** — upstairs calls run on their own clock and pay a long-haul
+  bonus. Ignore one and they take the stairs: lost fare, not a strike.
 - **In a shift** — every delivery earns **XP**; a full bar freezes the game for a
   **level-up: pick 1 of 3** relief upgrades (auto-leveling, a dispatch board that
   posts rider floors again, quicker doors, a bigger cabin…) that install on the

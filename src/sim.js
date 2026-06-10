@@ -50,9 +50,19 @@ function handleKey(k) {
     return;
   }
   if (st === 'TITLE') {
-    if (k === ' ' || k === 'enter') { run = newRun(); startShift(); }
+    if (k === ' ' || k === 'enter') { menu = 'OPERATOR'; }
     if (k === 'w') { menu = 'WORKSHOP'; }
     if (k === 'a') { menu = 'ACH'; }
+    return;
+  }
+  if (st === 'OPERATOR') {
+    if (k === 'escape') { menu = null; return; }
+    if (k === ' ' || k === 'enter') { startWithOperator(save.lastOperator || 'sal'); return; }
+    if (k >= '1' && k <= '9') {
+      const o = OPERATORS[parseInt(k, 10) - 1];
+      if (o && isOpUnlocked(o)) startWithOperator(o.key);
+      else if (o) sfx.buzz();
+    }
     return;
   }
   if (st === 'FIRED') {
@@ -182,12 +192,22 @@ function updateFx(dt) {
   }
 }
 
-function spawnPassenger() {
+// patience scales with the trip being asked for — a hop is not a haul
+function waitPat(dist) {
+  return (CFG.patienceTime + CFG.patPerFloor * dist) * game.m.patWaitMul * game.patMul;
+}
+function ridePatFor(dist) {
+  return (CFG.ridePatience + CFG.ridePatPerFloor * dist) * game.m.patRideMul * game.patMul;
+}
+
+function spawnPassenger(origin = 0) {
   const fx = game.fx;
-  // destination: uniform, or biased to the upper floors under "EVERYONE UP"
   const top = activeMaxIdx();
   let dest;
-  if (fx.destHigh && top >= 2) {
+  if (origin > 0) {
+    dest = 0;             // an upstairs caller, headed down to the lobby and out
+  } else if (fx.destHigh && top >= 2) {
+    // destination: uniform, or biased to the upper floors under "EVERYONE UP"
     const lo = Math.max(1, Math.ceil(top * 0.55));
     dest = lo + Math.floor(Math.random() * (top - lo + 1));
   } else {
@@ -206,10 +226,11 @@ function spawnPassenger() {
   let r = Math.random() * total, kind = 'normal';
   for (const k in weights) { r -= weights[k]; if (r <= 0) { kind = k; break; } }
 
-  let pat = game.m.patience * game.patMul;
+  let pat = waitPat(Math.abs(dest - origin));
   if (kind === 'nervous') pat *= 0.6;
   game.passengers.push({
     id: game.nextId++,
+    origin,
     dest,
     kind,
     vip: kind === 'vip',
@@ -247,7 +268,7 @@ function update(dt) {
   // hold R to abandon the run — a tap does nothing, so no fat-fingered wipes
   if (keys.has('r')) {
     game.abandonT = (game.abandonT || 0) + dt;
-    if (game.abandonT >= 1.0) { keys.delete('r'); run = newRun(); startShift(); return; }
+    if (game.abandonT >= 1.0) { keys.delete('r'); run = newRun(run.operator); startShift(); return; }
   } else game.abandonT = 0;
   if (game.introT > 0) game.introT = Math.max(0, game.introT - dt);
   const e = game.elev;
@@ -358,10 +379,21 @@ function update(dt) {
 
   // ── spawns ──
   game.spawnTimer -= dt;
-  const lobbyWaiting = game.passengers.filter(p => p.state === 'waiting').length;
+  const lobbyWaiting = game.passengers.filter(p => p.state === 'waiting' && p.origin === 0).length;
   if (game.spawnTimer <= 0 && lobbyWaiting < 7) {
     spawnPassenger();
     game.spawnTimer = game.spawnInterval * (0.8 + Math.random() * 0.4);
+  }
+  // upstairs calls: riders on upper floors heading down. They run on their own
+  // timer so they're extra revenue, not lobby pressure — and from shift 3 only,
+  // unless CHECKOUT DAY rings the whole building at once.
+  if (run.shiftNum >= 3 || game.fx.downMul > 1) {
+    game.downTimer -= dt;
+    const downWaiting = game.passengers.filter(p => p.state === 'waiting' && p.origin > 0).length;
+    if (game.downTimer <= 0 && downWaiting < 3 && activeMaxIdx() >= 2) {
+      spawnPassenger(1 + Math.floor(Math.random() * activeMaxIdx()));
+      game.downTimer = (game.spawnInterval * 2.6 / game.fx.downMul) * (0.8 + Math.random() * 0.4);
+    }
   }
 
   // ── passengers ──
@@ -373,19 +405,19 @@ function update(dt) {
   // Auto Doors: open themselves when you stop at a floor that needs you
   if (m.autoDoors && aligned && isStopped() && e.doorTarget === 0) {
     const wantsHere = game.passengers.some(p => p.state === 'riding' && p.dest === ci);
-    const lobbyJob = ci === 0 && slotsAboard() < cap && game.passengers.some(p => p.state === 'waiting');
-    if (wantsHere || lobbyJob) { e.doorTarget = 1; sfx.door(); }
+    const callJob = slotsAboard() < cap && game.passengers.some(p => p.state === 'waiting' && p.origin === ci);
+    if (wantsHere || callJob) { e.doorTarget = 1; sfx.door(); }
   }
 
-  // board: at lobby, aligned, open, with room — FIFO by arrival (movers take 2 slots)
-  if (ci === 0 && aligned && open) {
-    const waiting = game.passengers.filter(p => p.state === 'waiting');
+  // board: anyone waiting at THIS floor, aligned, open, with room — FIFO (movers take 2 slots)
+  if (aligned && open) {
+    const waiting = game.passengers.filter(p => p.state === 'waiting' && p.origin === ci);
     for (const p of waiting) {
       if (slotsAboard() + p.size > cap) continue;   // won't fit — skip, try the next
       p.state = 'riding';
       p.reveal = CFG.rememberTime;
-      // patience resets to the (often kinder) ride pool when they board
-      p.patience = game.m.ridePat * game.patMul * (p.kind === 'nervous' ? 0.6 : 1);
+      // patience resets to the ride pool, scaled by the trip still ahead
+      p.patience = ridePatFor(Math.abs(p.dest - ci)) * (p.kind === 'nervous' ? 0.6 : 1);
       p.patienceMax = p.patience;
       p.shoutT = 1.5;       // they SHOUT the floor as they step in — a speech bubble
       sfx.board();
@@ -408,6 +440,7 @@ function update(dt) {
         run.totalDelivered++;
         let fare = Math.round(((game.power.double > 0 ? 2 : 1) + game.m.fareBonus) * game.fx.fareMul);
         if (p.kind === 'tipper') fare += 2;            // big tippers pad the fare
+        if (p.origin > 0) fare += CFG.downFareBonus;   // long-haul: upstairs callers pay extra
         if (game.m.surge && lobbyWaiting >= 4) fare += game.m.surge;   // Surge Pricing
         fare = Math.max(1, fare);
         run.parts += fare;
@@ -455,15 +488,23 @@ function eligibleUpgrades() {
   return UPGRADES.filter(u => {
     if (run.up[u.key] >= u.max || run.banished.includes(u.key)) return false;
     if (run.up[u.key] > 0) return true;     // deepening what you own is always allowed
-    const cap = u.kind === 'habit' ? HABIT_SLOTS : FITTING_SLOTS;
+    const cap = u.kind === 'habit' ? habitSlotCap() : fittingSlotCap();
     return slotsUsed(u.kind) < cap;
   });
+}
+function startWithOperator(key) {
+  save.lastOperator = key;
+  persist();
+  menu = null;
+  run = newRun(key);
+  startShift();
 }
 function levelChoices(n) { return shuffle(eligibleUpgrades()).slice(0, n); }
 
 function openLevelUp() {
   run.levelPending--;
-  const choices = levelChoices(3 + (save.meta.bigShop || 0));
+  const n = Math.max(2, 3 + (save.meta.bigShop || 0) + (OP().choiceDelta || 0));
+  const choices = levelChoices(n);
   if (!choices.length) {                    // fully built: the level cashes out
     run.parts += 3;
     floatText('+3 ◆', '#d4a050');
@@ -523,8 +564,12 @@ function banishLevel(u) {
 }
 
 function losePassenger(p) {
+  // an upstairs caller you never picked up just takes the stairs — you lose the
+  // fare, not your job. (Once they're ABOARD, they're yours like anyone else.)
+  const tookStairs = p.state === 'waiting' && p.origin > 0;
   p.state = 'left';
   p.removeAt = game.t + 0.7;
+  if (tookStairs) return;
   game.walkoffsThisShift++;       // any walk-off (even forgiven) breaks a "spotless" shift
   if (game.m.apology && !game.apologyUsed) {   // Apology Notes: first walk-off each shift is free
     game.apologyUsed = true;

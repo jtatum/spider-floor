@@ -31,7 +31,8 @@ const SHIM = `
   newRun, startShift, endShift, update, mods, maxStrikes, combineFx,
   spawnPassenger, buyFuse, buyMeta, buySpecial, openShop, rerollShop, loadSave, persist,
   gainXP, xpCost, eligibleUpgrades, levelChoices, openLevelUp, pickLevel, skipLevel, rerollLevel, banishLevel,
-  slotsUsed, FITTING_SLOTS, HABIT_SLOTS,
+  slotsUsed, FITTING_SLOTS, HABIT_SLOTS, fittingSlotCap, habitSlotCap,
+  OPERATORS, isOpUnlocked, startWithOperator, waitPat, ridePatFor,
   nearestFloorIdx, isAligned, doorsOpen, ridersAboard, slotsAboard, capacityNow, enterSpider, spawnWebSpider,
   enterBoss, updateBoss, exitBoss, BOSS,
 };

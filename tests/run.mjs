@@ -170,6 +170,90 @@ test('a pending level-up resolves before the shift can end', (G) => {
   assert.equal(G.game.state, 'SHIFT_DONE', 'then the shift closes');
 });
 
+// ── down-riders & distance patience ──────────────────────────────────────────
+
+test('patience scales with the length of the trip', (G) => {
+  G.run = G.newRun(); G.startShift();
+  assert.ok(G.waitPat(8) > G.waitPat(1), 'a long haul earns more waiting patience');
+  assert.ok(G.ridePatFor(8) > G.ridePatFor(1), 'and more riding patience');
+});
+
+test('an upstairs caller boards on their floor and pays a long-haul bonus', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.game.passengers = [];
+  G.spawnPassenger(3);
+  const p = G.game.passengers.at(-1); normalize(p);
+  assert.equal(p.origin, 3, 'waits on floor 3');
+  assert.equal(p.dest, 0, 'headed down to the lobby');
+  openDoorsAt(G, 3); G.step(4);
+  assert.equal(p.state, 'riding', 'boards when you stop at their floor');
+  openDoorsAt(G, 0);
+  const before = G.run.parts;
+  G.step(3);
+  assert.equal(p.state, 'delivered');
+  assert.equal(G.run.parts - before, 1 + G.CFG.downFareBonus, 'base fare + long-haul bonus');
+});
+
+test('an ignored upstairs caller takes the stairs — no strike', (G) => {
+  G.run = G.newRun(); G.startShift();
+  const e = G.game.elev; e.doorTarget = 0; e.doors = 0; e.y = 0;
+  G.game.passengers = [];
+  G.spawnPassenger(4);
+  const p = G.game.passengers.at(-1); p.patience = 0.0001;
+  G.step(2);
+  assert.equal(p.state, 'left');
+  assert.equal(G.game.strikes, 0, 'no strike for an unanswered call');
+  assert.equal(G.game.walkoffsThisShift, 0, 'spotless is intact too');
+});
+
+test('down spawns wait for shift 3 unless CHECKOUT DAY rings them in', (G) => {
+  G.run = G.newRun(); G.startShift();           // shift 1
+  G.game.spawnTimer = 999; G.game.downTimer = 0; G.game.introT = 0;
+  G.step(60);
+  assert.ok(!G.game.passengers.some(p => p.origin > 0), 'no upstairs calls on shift 1');
+  const fx = G.combineFx([G.MODIFIERS.find(m => m.key === 'checkout')]);
+  assert.ok(fx.downMul > 1, 'CHECKOUT DAY multiplies down-calls');
+});
+
+// ── operators ────────────────────────────────────────────────────────────────
+
+test('operators: Dot learns faster, Gus packs a fitting, Lou gambles', (G) => {
+  G.run = G.newRun('dot'); G.startShift();
+  G.gainXP(10);
+  assert.equal(G.run.xp, 12.5, 'Dot banks +25% XP');
+
+  G.run = G.newRun('gus'); G.startShift();
+  const fittings = G.UPGRADES.filter(u => u.kind === 'fitting' && G.run.up[u.key] > 0);
+  assert.ok(fittings.length >= 1, 'Gus clocks in with a fitting installed');
+  assert.equal(G.habitSlotCap(), 3, 'but only 3 habit slots');
+
+  G.run = G.newRun('lou'); G.startShift();
+  assert.equal(G.run.banishes, 2, 'Lou gets +1 banish');
+  assert.equal(G.game.lvRerolls, 2, 'and 2 free rerolls per shift');
+  G.run.levelPending = 1; G.step(1);
+  assert.equal(G.game.levelUp.choices.length, 2, 'but one fewer level-up choice');
+});
+
+test('operators: Vera charms riders and VIPs but brakes worse', (G) => {
+  G.run = G.newRun('sal'); G.startShift();
+  const salBrake = G.game.m.brakeAccel, salPat = G.waitPat(3), salVip = G.game.m.vipRate;
+  G.run = G.newRun('vera'); G.startShift();
+  assert.ok(G.game.m.brakeAccel < salBrake, 'weaker brakes');
+  assert.ok(G.waitPat(3) > salPat, 'more patient riders');
+  assert.ok(G.game.m.vipRate > salVip, 'more VIPs');
+});
+
+test('operator unlocks read lifetime stats; picks are remembered', (G) => {
+  const dot = G.OPERATORS.find(o => o.key === 'dot');
+  assert.ok(!G.isOpUnlocked(dot), 'Dot starts locked');
+  G.save.stats.deliveries = 25;
+  assert.ok(G.isOpUnlocked(dot), 'unlocked by lifetime deliveries');
+  G.startWithOperator('dot');
+  assert.equal(G.save.lastOperator, 'dot', 'remembered for next time');
+  assert.equal(G.run.operator, 'dot');
+  assert.equal(G.game.state, 'PLAYING', 'and the shift starts');
+});
+
 // ── Spider Floor ─────────────────────────────────────────────────────────────
 
 // step off the lift onto the Spider Floor ledge
@@ -462,7 +546,7 @@ test('a full career plays many shifts through the live loop without breaking', (
       const riders = G.game.passengers.filter(p => p.state === 'riding');
       const waiting = G.game.passengers.filter(p => p.state === 'waiting');
       if (riders.length) { goOpen(riders[0].dest); shut(); }
-      else if (waiting.length) { goOpen(0); shut(); }
+      else if (waiting.length) { goOpen(waiting[0].origin); shut(); }
       else { shut(); G.step(20); }
     } else if (st === 'LEVELUP') {
       G.pickLevel(G.game.levelUp.choices[0]);     // take whatever's on top

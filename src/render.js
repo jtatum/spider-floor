@@ -25,6 +25,7 @@ function render() {
   if (st !== lastScreen) { screenFade = 1; lastScreen = st; }   // fade-in on every screen change
   if (st === 'WORKSHOP')   drawWorkshop();
   else if (st === 'ACH')   drawAchievements();
+  else if (st === 'OPERATOR') drawOperatorSelect();
   else if (st === 'TITLE') drawTitle();
   else if (st === 'SHOP')  drawShop();
   else if (st === 'SPIDER') drawSpider();
@@ -235,6 +236,26 @@ function drawBuilding() {
     ctx.beginPath(); ctx.moveTo(SHAFT_LEFT, sy); ctx.lineTo(SHAFT_RIGHT, sy); ctx.stroke();
   }
 
+  // off-screen call markers: someone is waiting beyond the view, up or down
+  let callsUp = 0, callsDown = 0;
+  for (const p of game.passengers) {
+    if (p.state !== 'waiting' || p.origin === 0) continue;
+    const sy = worldToScreen(p.origin * CFG.floorHeight);
+    if (sy < 30) callsUp++;
+    else if (sy > H - 30) callsDown++;
+  }
+  const callX = (SHAFT_LEFT + SHAFT_RIGHT) / 2;
+  const pulse = 0.5 + 0.4 * Math.sin(game.t * 6);
+  ctx.font = 'bold 13px ui-monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  if (callsUp) {
+    ctx.fillStyle = `rgba(255,200,90,${pulse})`;
+    ctx.fillText(`▲ ${callsUp} call${callsUp > 1 ? 's' : ''}`, callX, 56);
+  }
+  if (callsDown) {
+    ctx.fillStyle = `rgba(255,200,90,${pulse})`;
+    ctx.fillText(`▼ ${callsDown} call${callsDown > 1 ? 's' : ''}`, callX, H - 44);
+  }
+
   // downward "go here" arrow when the floor is open and you're above it
   if (game.spider.open) {
     const a = 0.4 + 0.4 * Math.sin(game.t * 5);
@@ -314,16 +335,21 @@ function drawFloor(f, sy) {
   ctx.lineWidth = 2;
   ctx.strokeRect(ROOM_LEFT + 4, top + 8, 60, CFG.floorHeight - 16);
 
-  if (idx === 0) {
-    const waiting = game.passengers.filter(p => p.state === 'waiting');
-    let px = ROOM_LEFT + 96;
-    for (const p of waiting) {
-      p.tx = px;
-      p.x = p.x ? p.x + (p.tx - p.x) * 0.2 : p.tx;
-      drawPassenger(p, p.x, bot - 8, 'waiting');
-      px += 52;
-      if (px > ROOM_RIGHT - 24) break;
-    }
+  // whoever is waiting on THIS floor queues by the lift door
+  const waiting = game.passengers.filter(p => p.state === 'waiting' && p.origin === idx);
+  let px = ROOM_LEFT + 96;
+  for (const p of waiting) {
+    p.tx = px;
+    p.x = p.x ? p.x + (p.tx - p.x) * 0.2 : p.tx;
+    drawPassenger(p, p.x, bot - 8, 'waiting');
+    px += 52;
+    if (px > ROOM_RIGHT - 24) break;
+  }
+  // an upstairs call lights the lamp on the door frame — your cue to climb
+  if (idx > 0 && waiting.length) {
+    const a = 0.45 + 0.45 * Math.sin(game.t * 6);
+    ctx.fillStyle = `rgba(255,200,90,${a})`;
+    ctx.beginPath(); ctx.arc(ROOM_LEFT + 14, top + 20, 4, 0, 7); ctx.fill();
   }
 }
 
@@ -503,10 +529,11 @@ function drawCar() {
     slot += sz;
   }
 
-  // CABIN FULL flag — so it's obvious why the lobby keeps piling up
+  // CABIN FULL flag — so it's obvious why this floor keeps piling up
   if (usedSlots >= cap) {
-    const waiting = game.passengers.some(s => s.state === 'waiting');
-    if (waiting && nearestFloorIdx(game.elev.y) === 0) {
+    const here = nearestFloorIdx(game.elev.y);
+    const waiting = game.passengers.some(s => s.state === 'waiting' && s.origin === here);
+    if (waiting) {
       ctx.fillStyle = `rgba(170,58,50,${0.55 + 0.25 * Math.sin(game.t * 6)})`;
       ctx.font = 'bold 13px ui-monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('CABIN FULL', cx, top - 12);
@@ -630,7 +657,7 @@ function drawPassenger(p, x, footY, mode) {
   const m = game.m;
   const destLabel = (game.floors[p.dest] || { label: '?' }).label;
   let txt;
-  if (mode === 'waiting') { txt = destLabel; }
+  if (mode === 'waiting') { txt = p.origin > 0 ? '↓' + destLabel : destLabel; }
   else { // riding — fades to "?" from memory unless the Dispatch Board (or X-Ray) helps
     const remembered = m.dispatch || game.power.xray > 0 || p.reveal > 0;
     txt = remembered ? destLabel : '?';
@@ -886,7 +913,7 @@ function drawTitle() {
   }
 
   drawButton('CLOCK IN  ▸', W / 2 - 290, H - 128, 200, 46,
-             () => { run = newRun(); startShift(); }, true);
+             () => { menu = 'OPERATOR'; }, true);
   drawButton(`WORKSHOP ★${save.stars}`, W / 2 - 78, H - 128, 184, 46,
              () => { menu = 'WORKSHOP'; }, false);
   const got = ACHIEVEMENTS.filter(a => save.ach[a.key]).length;
@@ -1274,6 +1301,62 @@ function drawFired() {
   drawButton('CLOCK IN AGAIN', W / 2 + 14, H / 2 + 80, 226, 46, () => { menu = null; game.state = 'TITLE'; }, true);
 }
 
+// ── operator select: who's on the crank this run ──
+function drawOperatorSelect() {
+  ctx.fillStyle = '#0d0a08'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#bfa45f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = 'bold 32px ui-monospace';
+  ctx.fillText("WHO'S ON THE CRANK?", W / 2, 50);
+  ctx.font = '13px ui-monospace'; ctx.fillStyle = '#7a6a4a';
+  ctx.fillText('every operator works the same lift — none of them work it the same way', W / 2, 78);
+
+  const cardW = 560, cardH = 86, gapY = 12;
+  const x0 = (W - cardW) / 2, y0 = 108;
+  OPERATORS.forEach((o, i) => {
+    const cy = y0 + i * (cardH + gapY);
+    const unlocked = isOpUnlocked(o);
+    const isLast = o.key === (save.lastOperator || 'sal');
+
+    ctx.fillStyle = unlocked ? '#1a130d' : '#100d0a';
+    ctx.fillRect(x0, cy, cardW, cardH);
+    ctx.strokeStyle = !unlocked ? '#2a2218' : isLast ? '#ffd44a' : '#bfa45f';
+    ctx.lineWidth = isLast && unlocked ? 2.5 : 2;
+    ctx.strokeRect(x0, cy, cardW, cardH);
+
+    if (unlocked) {
+      ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 16px ui-monospace';
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillText(`${i + 1}`, x0 + 14, cy + 10);
+      ctx.fillStyle = '#e8dcc0'; ctx.font = 'bold 16px ui-monospace';
+      ctx.fillText(`${o.name} — ${o.epithet}`, x0 + 36, cy + 9);
+      ctx.fillStyle = '#7a6a4a'; ctx.font = 'italic 11px ui-monospace';
+      ctx.fillText(o.blurb, x0 + 36, cy + 29);
+      ctx.fillStyle = '#7adf9a'; ctx.font = '12px ui-monospace';
+      ctx.fillText(`+ ${o.buff}`, x0 + 36, cy + 48);
+      ctx.fillStyle = '#e0584a';
+      ctx.fillText(`− ${o.penalty}`, x0 + 36, cy + 65);
+      if (isLast) {
+        ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 10px ui-monospace'; ctx.textAlign = 'right';
+        ctx.fillText('LAST SHIFT ▸ SPACE', x0 + cardW - 12, cy + 10);
+      }
+      buttons.push({ x: x0, y: cy, w: cardW, h: cardH, fn: () => startWithOperator(o.key) });
+    } else {
+      ctx.fillStyle = '#4a3e2c'; ctx.font = 'bold 16px ui-monospace';
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillText(`${o.name} — ${o.epithet}`, x0 + 36, cy + 9);
+      ctx.fillStyle = '#3a3226'; ctx.font = '12px ui-monospace';
+      ctx.fillText('🔒 punches in once you…', x0 + 36, cy + 40);
+      ctx.fillStyle = '#6a5a3a';
+      ctx.fillText(o.unlockHint, x0 + 36, cy + 58);
+    }
+  });
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#7a6a4a'; ctx.font = '12px ui-monospace';
+  ctx.fillText('1-5 pick · SPACE clock in with your last crew · ESC back', W / 2, H - 78);
+  drawButton('◂  BACK', W / 2 - 110, H - 60, 220, 40, () => { menu = null; }, false);
+}
+
 // ── the Workshop: permanent cross-run perks bought with ★ stars ──
 function drawWorkshop() {
   ctx.fillStyle = '#0b0a0d'; ctx.fillRect(0, 0, W, H);
@@ -1420,15 +1503,15 @@ function drawShop() {
 function drawBuildPanel(x0, y, totalW) {
   const colW = (totalW - 20) / 2;
   const groups = [
-    { title: `FITTINGS  ${slotsUsed('fitting')}/${FITTING_SLOTS}`, kind: 'fitting', x: x0 },
-    { title: `HABITS  ${slotsUsed('habit')}/${HABIT_SLOTS}`,       kind: 'habit',   x: x0 + colW + 20 },
+    { title: `FITTINGS  ${slotsUsed('fitting')}/${fittingSlotCap()}`, kind: 'fitting', x: x0 },
+    { title: `HABITS  ${slotsUsed('habit')}/${habitSlotCap()}`,       kind: 'habit',   x: x0 + colW + 20 },
   ];
   for (const g of groups) {
     ctx.fillStyle = '#6a6a4a'; ctx.font = '11px ui-monospace';
     ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
     ctx.fillText(g.title, g.x, y - 4);
     const owned = UPGRADES.filter(u => u.kind === g.kind && run.up[u.key] > 0);
-    const cap = g.kind === 'habit' ? HABIT_SLOTS : FITTING_SLOTS;
+    const cap = g.kind === 'habit' ? habitSlotCap() : fittingSlotCap();
     let cy = y + 2;
     for (let i = 0; i < cap; i++) {
       const u = owned[i];

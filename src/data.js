@@ -30,8 +30,13 @@ const CFG = {
   settleFriction: 0.82,   // gentle extra drag only at a crawl, so a careful stop is possible
   settleBelow: 9,         // speed under which settleFriction kicks in (px/s)
   doorTime: 0.55,
-  patienceTime: 22,       // waiting patience (seconds)
-  ridePatience: 18,       // patience once aboard
+  // patience scales with the TRIP: a floor-2 hop and a penthouse haul are
+  // different asks. base + perFloor × |dest − origin|.
+  patienceTime: 16,       // waiting patience base (seconds)
+  patPerFloor: 1.7,       // + per floor of the trip ahead
+  ridePatience: 11,       // riding patience base
+  ridePatPerFloor: 2.0,   // + per floor still to travel
+  downFareBonus: 1,       // upstairs callers pay extra for the long haul
   alignTolerance: 16,
   stopSpeed: 22,
   rememberTime: 2.8,      // seconds a rider's floor stays "remembered"
@@ -49,9 +54,41 @@ const CFG = {
 const FITTING_SLOTS = 5;
 const HABIT_SLOTS = 4;
 
+// ── operators: who's on the crank this run. A minor buff and a minor dent —
+// flavor first, balance second. Most are unlocked by just playing.
+const OPERATORS = [
+  { key: 'sal',  name: 'Sal',  epithet: 'The Veteran',
+    blurb: 'Twenty years on this crank.',
+    buff: 'No surprises.', penalty: 'No favours.' },
+  { key: 'dot',  name: 'Dot',  epithet: 'The Intern',
+    blurb: 'First week. Endless notes.',
+    xpMul: 1.25, patMul: 0.9,
+    buff: '+25% XP — a fast learner.', penalty: 'Riders are 10% less patient with the new kid.',
+    unlock: s => s.deliveries >= 25, unlockHint: 'deliver 25 riders (lifetime)' },
+  { key: 'gus',  name: 'Gus',  epithet: 'The Mechanic',
+    blurb: 'Smells of grease and certainty.',
+    startFitting: true, habitCap: 3,
+    buff: 'Clocks in with a random fitting installed.', penalty: 'Machines over people: only 3 habit slots.',
+    unlock: s => s.maxShift >= 3, unlockHint: 'reach shift 3' },
+  { key: 'vera', name: 'Vera', epithet: 'The Charmer',
+    blurb: 'Remembers every name in the building.',
+    patMul: 1.15, vipMul: 1.5, brakeMul: 0.85,
+    buff: 'Riders 15% more patient · VIPs visit more.', penalty: 'Never learned to brake: 15% weaker.',
+    unlock: s => s.vips >= 5, unlockHint: 'deliver 5 VIPs (lifetime)' },
+  { key: 'lou',  name: 'Lou',  epithet: 'The Gambler',
+    blurb: 'Quit the casino. Mostly.',
+    choiceDelta: -1, banishBonus: 1, lvRerollBonus: 2,
+    buff: '+2 free rerolls each shift · +1 banish.', penalty: 'Level-ups deal one fewer choice.',
+    unlock: s => s.fires >= 2, unlockHint: 'get fired twice. it happens.' },
+];
+function OP() { return OPERATORS.find(o => o.key === (run && run.operator)) || OPERATORS[0]; }
+function isOpUnlocked(o) { return !o.unlock || o.unlock(save.stats); }
+function fittingSlotCap() { return FITTING_SLOTS; }
+function habitSlotCap() { return OP().habitCap ?? HABIT_SLOTS; }
+
 function xpCost(level) { return CFG.xpBase + level * CFG.xpGrowth; }
 function gainXP(amount) {
-  run.xp += amount;
+  run.xp += amount * (OP().xpMul || 1);
   while (run.xp >= run.xpNext) {
     run.xp -= run.xpNext;
     run.level++;
@@ -190,6 +227,8 @@ const MODIFIERS = [
     fx: { moverMul: 5 } },
   { key: 'night',    name: 'GRAVEYARD SHIFT',tone: 'wild', desc: 'Quiet… and the Spider Floor stirs early and often.',
     fx: { spiderMul: 0.35, forceSpider: true, dark: 0.4, spawnMul: 1.25 } },
+  { key: 'checkout', name: 'CHECKOUT DAY',   tone: 'wild', desc: 'The whole building wants OUT. Calls ring from every floor.',
+    fx: { downMul: 3, fareMul: 1.15 } },
   { key: 'express',  name: 'EVERYONE UP',    tone: 'wild', desc: 'The whole crowd is headed for the upper floors.',
     fx: { destHigh: true, fareMul: 1.25 } },
   { key: 'tippers',  name: 'GENEROUS TIPPERS',tone: 'good',desc: 'Big tippers about — and fares run a little richer.',
@@ -201,7 +240,7 @@ const MODIFIERS = [
 function combineFx(mods) {
   const fx = { spawnMul: 1, patMul: 1, fareMul: 1, vipMul: 1, capDelta: 0, coast: 0,
                spiderMul: 1, dark: 0, destHigh: false, moverMul: 1, nervousMul: 1,
-               tipperMul: 1, forceSpider: false };
+               tipperMul: 1, forceSpider: false, downMul: 1 };
   for (const md of mods) {
     const e = md.fx;
     fx.spawnMul   *= e.spawnMul   ?? 1;
@@ -217,6 +256,7 @@ function combineFx(mods) {
     fx.nervousMul *= e.nervousMul ?? 1;
     fx.tipperMul  *= e.tipperMul  ?? 1;
     fx.forceSpider = fx.forceSpider || !!e.forceSpider;
+    fx.downMul    *= e.downMul    ?? 1;
   }
   return fx;
 }
@@ -331,7 +371,7 @@ function defaultStats() {
 function defaultSave() {
   const meta = {};
   for (const m of META) meta[m.key] = 0;
-  return { stars: 0, meta, best: { shifts: 0, delivered: 0 }, stats: defaultStats(), ach: {}, beatBoss: false, muted: false };
+  return { stars: 0, meta, best: { shifts: 0, delivered: 0 }, stats: defaultStats(), ach: {}, beatBoss: false, muted: false, lastOperator: 'sal' };
 }
 function loadSave() {
   const def = defaultSave();
@@ -372,9 +412,11 @@ function maxStrikes() {
   return CFG.strikesAllowed + save.meta.unionCard + ((run && run.up.reinforced) || 0) + ((game && game.extraStrike) || 0);
 }
 
-function newRun() {
+function newRun(opKey) {
   save.stats.runs++;
   checkAchievements();
+  const operator = opKey || save.lastOperator || 'sal';
+  const o = OPERATORS.find(x => x.key === operator) || OPERATORS[0];
   const meta = save.meta;
   const up = {};
   for (const u of UPGRADES) up[u.key] = 0;
@@ -387,11 +429,16 @@ function newRun() {
     const pool = UPGRADES.filter(u => up[u.key] < u.max);
     if (pool.length) up[pool[Math.floor(Math.random() * pool.length)].key]++;
   }
+  if (o.startFitting) {                 // Gus arrives with a toolbox
+    const pool = UPGRADES.filter(u => u.kind === 'fitting' && up[u.key] < u.max);
+    if (pool.length) up[pool[Math.floor(Math.random() * pool.length)].key]++;
+  }
   return {
+    operator,
     up,
     parts: [0, 5, 10, 15, 20][meta.severance] ?? 0,
     rerolls: 0,
-    banishes: 1,       // once per run: strike an upgrade from the draft pool for good
+    banishes: 1 + (o.banishBonus || 0),   // per run: strike upgrades from the pool for good
     banished: [],
     level: 0,          // run-long XP track: deliveries fill it, level-ups spend it
     xp: 0,
@@ -412,16 +459,18 @@ function newRun() {
 function mods() {
   const u = run.up;
   const L = (k) => u[k] || 0;
+  const o = OP();
   const cushion = [1, 1.25, 1.45, 1.6][L('cushions')];
   return {
     maxSpeed:   CFG.maxSpeed   * [1, 1.22, 1.40, 1.55][L('motor')],
     accel:      CFG.accel      * [1, 1.18, 1.32, 1.45][L('motor')],
-    brakeAccel: CFG.brakeAccel * [1, 1.6, 2.1][L('brakes')],
+    brakeAccel: CFG.brakeAccel * [1, 1.6, 2.1][L('brakes')] * (o.brakeMul || 1),
     doorTime:   CFG.doorTime   * [1, 0.65, 0.42][L('fastDoors')] * (save.meta.greaseMonkey ? 0.8 : 1),
     coastFriction: CFG.coastFriction - [0, 0.004, 0.008][L('damper')],
     alignTol:   CFG.alignTolerance + [0, 4, 8][L('precision')],
-    patience:   CFG.patienceTime * cushion * [1, 1.25, 1.5][L('coffee')],
-    ridePat:    CFG.ridePatience * cushion * [1, 1.25, 1.5][L('muzak')],
+    // patience multipliers — applied to (base + perFloor × trip) at spawn/board
+    patWaitMul: cushion * [1, 1.25, 1.5][L('coffee')] * (o.patMul || 1),
+    patRideMul: cushion * [1, 1.25, 1.5][L('muzak')]  * (o.patMul || 1),
     capacity:   CFG.capacity + [0, 1, 2, 3][L('capacity')] + [0, 1, 2][save.meta.roomierStart],
     autoLevel:  L('autoLevel') >= 1,
     autoDoors:  L('autoDoors') >= 1,
@@ -433,7 +482,7 @@ function mods() {
     fareBonus:  [0, 1, 2][L('tipjar')] + save.meta.frequentFlyer,
     surge:      L('surge'),
     apology:    L('apology') >= 1,
-    vipRate:    [1, 1.5, 2][L('lucky')] * (1 + 0.6 * save.meta.reputation),
+    vipRate:    [1, 1.5, 2][L('lucky')] * (1 + 0.6 * save.meta.reputation) * (o.vipMul || 1),
     powerDur:   [1, 1.4, 1.8][L('powercell')],
   };
 }
@@ -490,8 +539,9 @@ function startShift() {
     spiderGame: null,
     apologyUsed: false,
     walkoffsThisShift: 0,
-    lvRerolls: save.meta.rerollToken || 0,   // Haggler: free level-up rerolls, per shift
+    lvRerolls: (save.meta.rerollToken || 0) + (OP().lvRerollBonus || 0),  // free level-up rerolls, per shift
     levelUp: null,                           // the open pick-1-of-3, when state === 'LEVELUP'
+    downTimer: introT + 5,                   // upstairs calls start after the day warms up
     m,
   };
 
