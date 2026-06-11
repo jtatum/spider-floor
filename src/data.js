@@ -390,7 +390,8 @@ function defaultStats() {
 function defaultSave() {
   const meta = {};
   for (const m of META) meta[m.key] = 0;
-  return { stars: 0, meta, best: { shifts: 0, delivered: 0 }, stats: defaultStats(), ach: {}, beatBoss: false, muted: false, lastOperator: 'sal', lastHeat: 0 };
+  return { stars: 0, meta, best: { shifts: 0, delivered: 0 }, stats: defaultStats(), ach: {}, beatBoss: false,
+           muted: false, musicVol: 1, sfxVol: 1, shake: true, lastOperator: 'sal', lastHeat: 0 };
 }
 function loadSave() {
   const def = defaultSave();

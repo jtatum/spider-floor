@@ -19,8 +19,9 @@ Open `index.html` in a browser (or serve the folder and visit it). No build step
 - **↑ / ↓** — crank the car up / down. It's a flywheel: let go and it *coasts*.
   Reverse-crank to brake. Stopping on a floor is the whole skill.
 - **SPACE** — open / close the doors (only when stopped **and** aligned).
-- **P / ESC** — pause (the game also pauses itself when the window loses focus).
-- **M** — mute / unmute (remembered between sessions).
+- **P / ESC / the ⏸ chip** — pause opens the settings modal: music & SFX volume,
+  screen shake, abandon run. (The game also pauses itself on lost focus.)
+- **M** — mute / unmute. All settings are remembered between sessions.
 - **W** — on the title screen, open the **Workshop**; **A** for achievements.
 - **hold R** — abandon the run and start over (a tap does nothing).
 

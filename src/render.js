@@ -13,7 +13,7 @@ function worldToScreen(wy) { return CENTER_Y - (wy - game.elev.y); }
 
 function render() {
   buttons.length = 0;
-  const sh = (game && game.shake) || 0;
+  const sh = save.shake === false ? 0 : (game && game.shake) || 0;   // settings: shake off
   const sx = (Math.random() - 0.5) * sh;
   const sy = (Math.random() - 0.5) * sh;
   ctx.save();
@@ -87,14 +87,44 @@ function drawToasts() {
   }
 }
 
+// the pause modal doubles as the settings screen — every option is a button,
+// so it's the touch-reachable home for pause / volumes / shake / abandon
 function drawPaused() {
-  ctx.fillStyle = 'rgba(8,6,4,0.62)';
+  ctx.fillStyle = 'rgba(8,6,4,0.78)';
   ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#bfa45f'; ctx.font = 'bold 42px ui-monospace';
-  ctx.fillText('PAUSED', W / 2, H / 2 - 16);
-  ctx.fillStyle = '#7a6a4a'; ctx.font = '14px ui-monospace';
-  ctx.fillText('P or ESC to resume  ·  M sound', W / 2, H / 2 + 24);
+  ctx.fillStyle = '#bfa45f'; ctx.font = 'bold 40px ui-monospace';
+  ctx.fillText('PAUSED', W / 2, 156);
+
+  const pct = (v) => (v ?? 1) === 0 ? 'OFF' : `${Math.round((v ?? 1) * 100)}%`;
+  const bw = 320, bx = W / 2 - bw / 2, bh = 42, gap = 12;
+  let by = 212;
+  const row = (label, fn, primary) => { drawButton(label, bx, by, bw, bh, fn, primary); by += bh + gap; };
+  row('▸  RESUME', () => setPaused(false), true);
+  row(`MUSIC  ${pct(save.musicVol)}`, () => cycleVol('musicVol'), false);
+  row(`SOUND FX  ${pct(save.sfxVol)}`, () => cycleVol('sfxVol'), false);
+  row(`SCREEN SHAKE  ${save.shake === false ? 'OFF' : 'ON'}`, toggleShake, false);
+  by += 8;
+  // abandon wants a deliberate second tap — and reads like it
+  if (abandonArm) {
+    ctx.fillStyle = '#e0584a'; ctx.font = 'bold 12px ui-monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('the run ends here — sure?', W / 2, by - 6);
+  }
+  row(abandonArm ? '✕  TAP AGAIN TO ABANDON' : '✕  ABANDON RUN', abandonRun, false);
+
+  ctx.fillStyle = '#7a6a4a'; ctx.font = '13px ui-monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('P or ESC to resume  ·  M mute', W / 2, by + 14);
+}
+
+// a small on-screen pause chip so touch can reach the modal at all
+function drawPauseChip(x, y) {
+  ctx.fillStyle = 'rgba(13,10,8,0.85)'; ctx.fillRect(x, y, 26, 26);
+  ctx.strokeStyle = '#7a6a4a'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, 25, 25);
+  ctx.fillStyle = '#bfa45f';
+  ctx.fillRect(x + 8, y + 7, 4, 12); ctx.fillRect(x + 15, y + 7, 4, 12);
+  buttons.push({ x, y, w: 26, h: 26, fn: () => setPaused(true) });
 }
 
 // contextual nudges for a brand-new operator — only on shift 1 of a fresh profile
@@ -793,6 +823,8 @@ function drawHUD() {
     ctx.fillStyle = '#e0584a'; ctx.fillRect(W / 2 - 118, 108, 236 * k, 10);
   }
 
+  drawPauseChip(232, H - 28);   // tucked between the crank and door bars
+
   // active shift conditions — small tags top-left, so you remember what's in play
   let my = 46;
   for (const md of game.modifiers) {
@@ -1015,6 +1047,7 @@ function drawSpider() {
   }
   ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 20px ui-monospace'; ctx.textAlign = 'right';
   ctx.fillText(`◆ ${Math.floor(sg.loot)}  ·  ${sg.killed} slain`, W - 24, 40);
+  drawPauseChip(16, 62);
 
   // prompts
   if (!sg.result) {
@@ -1163,6 +1196,7 @@ function drawBoss() {
   }
   ctx.fillStyle = '#9a8aa2'; ctx.font = '11px ui-monospace'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
   ctx.fillText(bg.car.webbed > 0 ? 'WEBBED — crank sluggish' : '↑ ram it when it drops · ↓ retreat · dodge the red', W - 16, H - 26);
+  drawPauseChip(16, 16);
 
   // intro reveal / result overlay
   if (bg.intro > 0) {

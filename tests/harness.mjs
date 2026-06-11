@@ -34,6 +34,7 @@ const SHIM = `
   slotsUsed, FITTING_SLOTS, HABIT_SLOTS, fittingSlotCap, habitSlotCap,
   OPERATORS, isOpUnlocked, startWithOperator, waitPat, ridePatFor,
   HEAT, maxHeatUnlocked, openOperatorSelect, cycleHeat,
+  setPaused, cycleVol, toggleShake, abandonRun,
   get menuHeat(){return menuHeat}, set menuHeat(v){menuHeat=v}, musicPosOf, musicResolve,
   nearestFloorIdx, isAligned, doorsOpen, ridersAboard, slotsAboard, capacityNow, enterSpider, spawnWebSpider,
   enterBoss, updateBoss, exitBoss, BOSS,

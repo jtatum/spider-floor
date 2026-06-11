@@ -554,6 +554,39 @@ test('banish strikes a part from the run and refills the choices', (G) => {
   assert.ok(!G.run.banished.includes(other.key), 'a second banish is refused');
 });
 
+test('settings persist: volumes step, shake toggles, all saved to disk', (G) => {
+  G.cycleVol('musicVol');                       // 100% → OFF
+  assert.equal(G.save.musicVol, 0, 'volume steps wrap from 100% to OFF');
+  G.cycleVol('musicVol');
+  assert.equal(G.save.musicVol, 0.25, 'then climbs in quarters');
+  G.cycleVol('sfxVol');
+  assert.equal(G.save.sfxVol, 0, 'sfx steps independently');
+  G.toggleShake();
+  assert.equal(G.save.shake, false, 'shake off');
+  const reloaded = G.loadSave();
+  assert.equal(reloaded.musicVol, 0.25, 'music volume persisted');
+  assert.equal(reloaded.sfxVol, 0, 'sfx volume persisted');
+  assert.equal(reloaded.shake, false, 'shake persisted');
+});
+
+test('abandoning from the pause modal needs a second tap, then exits to title', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.setPaused(true);
+  G.abandonRun();                               // first tap only arms it
+  assert.equal(G.game.state, 'PLAYING', 'one tap does not abandon');
+  G.abandonRun();                               // the deliberate second tap
+  assert.equal(G.game.state, 'TITLE', 'two taps walk you out');
+  assert.equal(G.paused, false, 'unpaused on the way');
+  // arming must NOT survive closing and reopening the modal
+  G.run = G.newRun(); G.startShift();
+  G.setPaused(true);
+  G.abandonRun();                               // armed…
+  G.setPaused(false);                           // …but the player resumed instead
+  G.setPaused(true);
+  G.abandonRun();                               // fresh modal: this is a FIRST tap again
+  assert.equal(G.game.state, 'PLAYING', 'arming resets when the modal reopens');
+});
+
 test('pause freezes the simulation', (G) => {
   G.run = G.newRun(); G.startShift();
   G.step(10);

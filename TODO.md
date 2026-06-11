@@ -9,12 +9,11 @@ The working list. Roughly ordered within each section; strike things as they lan
       on html/body/canvas + touchend claimed on the buttons.
 - [x] **Arrows vs touch stomping** — touch buttons now feed synthetic `t-*` key names;
       rebinding/resize cleanup can no longer kill a held physical arrow key.
-- [ ] **Settings/pause modal** — one modal for: resume · music volume · SFX volume
-      (separate gain nodes already exist) · screen-shake toggle · abandon run (the
-      touch answer to hold-R) · quit to title. Opened by P/ESC and a small ⏸ corner
-      button (which also gives touch a pause). Replaces the bare PAUSED overlay.
-- [ ] **Mobile: odds and ends** — bigger tap targets on workshop/achievement cards;
-      mute reachable by touch (lives in the modal).
+- [x] **Settings/pause modal** — resume · music volume · SFX volume (separate buses)
+      · screen-shake toggle · abandon run (two-tap confirm; the touch answer to
+      hold-R). P/ESC or the ⏸ chip (drawn in PLAYING/SPIDER/BOSS) opens it.
+      Settings persist in the save.
+- [ ] **Mobile: odds and ends** — bigger tap targets on workshop/achievement cards.
 
 ## The Spider Floor v2: the webbed office (isometric maze)
 

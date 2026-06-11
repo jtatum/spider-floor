@@ -33,17 +33,28 @@ function musicResolve(done, name, MUSIC) {
 const sfx = (() => {
   let ac = null, master = null, muted = false;
   let mOsc = null, mGain = null;          // the motor: a persistent hum that tracks speed
+  // user-volume buses: every effect routes through sfxBus, all music through
+  // musicBus — so the settings sliders scale each family without touching the
+  // per-sound envelopes or the music fade logic (which own their local gains)
+  let sfxBus = null, musicBus = null, sfxVol = 1, musicVol = 1;
   function ensure() {
     if (ac) return;
     try {
       ac = new (window.AudioContext || window.webkitAudioContext)();
       master = ac.createGain(); master.gain.value = muted ? 0 : 0.32; master.connect(ac.destination);
+      sfxBus = ac.createGain(); sfxBus.gain.value = sfxVol; sfxBus.connect(master);
+      musicBus = ac.createGain(); musicBus.gain.value = musicVol; musicBus.connect(master);
     } catch (e) { ac = null; }
   }
   function resume() { ensure(); if (ac && ac.state === 'suspended') ac.resume(); }
   function setMuted(m) {
     muted = m;
     if (master) master.gain.value = m ? 0 : 0.32;
+  }
+  function setVolumes(music, sfxLevel) {
+    musicVol = music; sfxVol = sfxLevel;
+    if (musicBus) musicBus.gain.value = musicVol;
+    if (sfxBus) sfxBus.gain.value = sfxVol;
   }
   // called every frame with 0..1 = |speed| / maxSpeed (0 when idle/paused/menus)
   function setMotor(level) {
@@ -53,7 +64,7 @@ const sfx = (() => {
       mOsc = ac.createOscillator(); mGain = ac.createGain();
       mOsc.type = 'triangle'; mOsc.frequency.value = 36;
       mGain.gain.value = 0;
-      mOsc.connect(mGain); mGain.connect(master);
+      mOsc.connect(mGain); mGain.connect(sfxBus);
       mOsc.start();
     }
     const t = ac.currentTime;
@@ -134,7 +145,7 @@ const sfx = (() => {
     if (!eff) { musicCur = null; stopMusicSrc(); return; }   // one-shot with no follow-up → silence
     if (eff === musicCur) return;        // already playing/queued the right track
     musicCur = eff;
-    if (!musicGain) { musicGain = ac.createGain(); musicGain.gain.value = 0; musicGain.connect(master); }
+    if (!musicGain) { musicGain = ac.createGain(); musicGain.gain.value = 0; musicGain.connect(musicBus); }
     const cfg = MUSIC[eff];
     const looping = cfg.loop !== false;
     load(eff).then(buf => {
@@ -198,11 +209,11 @@ const sfx = (() => {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(vol, t + 0.008);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(master);
+    o.connect(g); g.connect(sfxBus);
     o.start(t); o.stop(t + dur + 0.02);
   }
   return {
-    resume, setMuted, setMotor, music, prefetchAll,
+    resume, setMuted, setVolumes, setMotor, music, prefetchAll,
     creak() { tone(170 + Math.random() * 70, 0.13, 'sawtooth', 0.12, 65 + Math.random() * 20); },
     ding()  { tone(880, 0.12, 'sine', 0.5); tone(1320, 0.16, 'sine', 0.3); },
     near()  { tone(1040, 0.05, 'sine', 0.25); },
@@ -226,5 +237,6 @@ const sfx = (() => {
   };
 })();
 
-sfx.setMuted(save.muted);   // honour the saved preference from the first note
+sfx.setMuted(save.muted);   // honour the saved preferences from the first note
+sfx.setVolumes(save.musicVol ?? 1, save.sfxVol ?? 1);
 

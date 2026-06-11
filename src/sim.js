@@ -23,6 +23,12 @@ const heldRight  = () => keys.has('arrowright') || keys.has('d') || keys.has('t-
 const heldAction = () => keys.has(' ')          || keys.has('t-act');
 
 let paused = false;
+let abandonArm = false;   // the pause modal's ABANDON needs a second tap
+
+function setPaused(v) {
+  paused = v;
+  abandonArm = false;     // a fresh modal never starts armed
+}
 
 function toggleMute() {
   save.muted = !save.muted;
@@ -33,16 +39,42 @@ function toggleMute() {
   }
 }
 
+// ── pause-modal settings: stepped volumes, shake toggle, abandon ──
+const VOL_STEPS = [0, 0.25, 0.5, 0.75, 1];
+function cycleVol(key) {
+  const v = save[key] ?? 1;
+  let i = VOL_STEPS.findIndex(s => Math.abs(s - v) < 0.01);
+  if (i < 0) i = VOL_STEPS.length - 1;
+  save[key] = VOL_STEPS[(i + 1) % VOL_STEPS.length];
+  sfx.setVolumes(save.musicVol ?? 1, save.sfxVol ?? 1);
+  persist();
+  sfx.buy();
+}
+function toggleShake() {
+  save.shake = save.shake === false;   // false → true, anything else → false
+  persist();
+  sfx.door();
+}
+// abandon from the modal: drop the run and walk back to the title. (Hold-R
+// remains the keyboard quick-restart; this is the touch-reachable way out.)
+function abandonRun() {
+  if (!abandonArm) { abandonArm = true; sfx.buzz(); return; }
+  setPaused(false);
+  menu = null;
+  game.state = 'TITLE';
+  sfx.door();
+}
+
 function handleKey(k) {
   const st = menu || (game ? game.state : 'TITLE');
 
   if (k === 'm') { toggleMute(); return; }     // mute works everywhere
   const pausable = !menu && (st === 'PLAYING' || st === 'SPIDER' || st === 'BOSS');
   if (paused) {                                 // frozen: only resume gets through
-    if (k === 'p' || k === 'escape') paused = false;
+    if (k === 'p' || k === 'escape') setPaused(false);
     return;
   }
-  if (pausable && (k === 'p' || k === 'escape')) { paused = true; return; }
+  if (pausable && (k === 'p' || k === 'escape')) { setPaused(true); return; }
 
   if (st === 'WORKSHOP') {
     if (k === 'enter' || k === 'escape' || k === 'w') { menu = null; return; }

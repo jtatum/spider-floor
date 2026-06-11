@@ -49,7 +49,7 @@ else window.addEventListener('load', () => sfx.prefetchAll(), { once: true });
 // tab away mid-shift → the building waits for you
 window.addEventListener('blur', () => {
   if (!menu && game && (game.state === 'PLAYING' || game.state === 'SPIDER' || game.state === 'BOSS')) {
-    paused = true;
+    setPaused(true);
   }
 });
 
@@ -57,7 +57,7 @@ window.addEventListener('blur', () => {
 const hintEl = document.getElementById('hint');
 let lastHint = '';
 const HINTS = {
-  PAUSED:   'PAUSED · P resume · M sound',
+  PAUSED:   'PAUSED · tap or click an option · P resume',
   TITLE:    'SPACE clock in · W workshop · A achievements · M sound',
   PLAYING:  '↑/↓ crank · SPACE doors · P pause · hold R abandon run',
   SPIDER:   '←/→ move · SPACE swing · ↑ at the door to bail out',
