@@ -26,7 +26,6 @@ const SHIM = `
   get shop(){return shop}, set shop(v){shop=v},
   get paused(){return paused}, set paused(v){paused=v},
   CFG, META, UPGRADES, MODIFIERS, SPECIALS, ACHIEVEMENTS, ACH_TOTAL, SPIDER_Y, FUSE_COST, keys,
-  PLAT_Y, PLAT_LEFT, PLAT_RIGHT, DOOR_X,
   checkAchievements,
   newRun, startShift, endShift, update, mods, maxStrikes, combineFx,
   spawnPassenger, buyFuse, buyMeta, buySpecial, openShop, rerollShop, loadSave, persist,
@@ -36,9 +35,10 @@ const SHIM = `
   HEAT, maxHeatUnlocked, openOperatorSelect, cycleHeat,
   setPaused, setVol, toggleShake, abandonRun,
   get menuHeat(){return menuHeat}, set menuHeat(v){menuHeat=v}, musicPosOf, musicResolve,
-  nearestFloorIdx, isAligned, doorsOpen, ridersAboard, slotsAboard, capacityNow, enterSpider, spawnWebSpider,
+  nearestFloorIdx, isAligned, doorsOpen, ridersAboard, slotsAboard, capacityNow,
   enterBoss, updateBoss, exitBoss, BOSS,
-  genMaze, bfsDistances, tryMove, screenDirToWorld, enterMaze, exitMaze, updateMaze, mazeWalkable,
+  genMaze, bfsDistances, tryMove, screenDirToWorld, enterMaze, finishMaze, updateMaze, mazeWalkable,
+  spawnMazeSpider, openCocoon,
 };
 `;
 

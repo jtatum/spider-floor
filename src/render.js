@@ -30,7 +30,6 @@ function render() {
   else if (st === 'SETTINGS') drawSettingsMenu();
   else if (st === 'TITLE') drawTitle();
   else if (st === 'SHOP')  drawShop();
-  else if (st === 'SPIDER') drawSpider();
   else if (st === 'MAZE') drawMaze();
   else if (st === 'BOSS') drawBoss();
   else if (st === 'VICTORY') drawVictory();
@@ -55,7 +54,7 @@ function render() {
     if (st === 'FIRED') drawFired();
   }
 
-  if (paused && (st === 'PLAYING' || st === 'SPIDER' || st === 'BOSS' || st === 'MAZE')) drawPaused();
+  if (paused && (st === 'PLAYING' || st === 'BOSS' || st === 'MAZE')) drawPaused();
 
   drawToasts();
 
@@ -1011,143 +1010,8 @@ function drawButton(label, x, y, w, h, fn, primary) {
   buttons.push({ x, y, w, h, fn });
 }
 
-// ── the Spider Floor: a webbed-ledge sword fight ──
-function drawSpider() {
-  const sg = game.spiderGame;
-  const P = sg.player;
-
-  // backdrop + red pulse when hurt
-  ctx.fillStyle = '#0a0510'; ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = `rgba(60,8,40,${0.22 + (sg.hitFlash > 0 ? 0.35 : 0)})`;
-  ctx.fillRect(0, 0, W, H);
-
-  // faint radial web behind everything
-  ctx.strokeStyle = 'rgba(150,130,170,0.08)'; ctx.lineWidth = 1;
-  for (let a = 0; a < Math.PI * 2; a += Math.PI / 9) {
-    ctx.beginPath(); ctx.moveTo(W / 2, -40); ctx.lineTo(W / 2 + Math.cos(a) * 760, -40 + Math.sin(a) * 760); ctx.stroke();
-  }
-  for (let r = 90; r < 760; r += 90) {
-    ctx.beginPath();
-    for (let a = 0; a <= Math.PI * 2 + 0.1; a += Math.PI / 9) {
-      const px = W / 2 + Math.cos(a) * r, py = -40 + Math.sin(a) * r;
-      a === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-    }
-    ctx.stroke();
-  }
-
-  ctx.fillStyle = '#c89aff'; ctx.font = 'bold 24px ui-monospace';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('THE SPIDER FLOOR', W / 2, 40);
-
-  // the ledge
-  ctx.fillStyle = '#241620'; ctx.fillRect(PLAT_LEFT - 30, PLAT_Y, PLAT_RIGHT - PLAT_LEFT + 60, H - PLAT_Y);
-  ctx.fillStyle = '#3a2436'; ctx.fillRect(PLAT_LEFT - 30, PLAT_Y, PLAT_RIGHT - PLAT_LEFT + 60, 6);
-  // web strands draping under the ledge
-  ctx.strokeStyle = 'rgba(180,160,200,0.18)'; ctx.lineWidth = 1;
-  for (let x = PLAT_LEFT; x < PLAT_RIGHT; x += 46) {
-    ctx.beginPath(); ctx.moveTo(x, PLAT_Y + 6); ctx.quadraticCurveTo(x + 23, PLAT_Y + 40, x + 46, PLAT_Y + 6); ctx.stroke();
-  }
-
-  // the lift door (your way out) at the left
-  ctx.fillStyle = '#1a1018'; ctx.fillRect(DOOR_X - 6, PLAT_Y - 76, 54, 76);
-  ctx.strokeStyle = '#7aff9a'; ctx.lineWidth = 2; ctx.strokeRect(DOOR_X - 6, PLAT_Y - 76, 54, 76);
-  ctx.fillStyle = 'rgba(120,255,160,0.12)'; ctx.fillRect(DOOR_X - 2, PLAT_Y - 72, 46, 70);
-  ctx.fillStyle = '#7aff9a'; ctx.font = '9px ui-monospace'; ctx.fillText('LIFT', DOOR_X + 21, PLAT_Y - 84);
-
-  // spiders + their threads
-  for (const s of sg.spiders) {
-    if (!s.dead && s.state === 'descend') {
-      ctx.strokeStyle = 'rgba(220,210,230,0.4)'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(s.x, -10); ctx.lineTo(s.x, s.y); ctx.stroke();
-    }
-    drawWebSpider(s);
-  }
-
-  // the operator with a sword
-  drawSwordPlayer(P, sg);
-
-  // particles / floating text
-  for (const f of sg.fx) {
-    ctx.globalAlpha = Math.max(0, 1 - f.life / f.max);
-    if (f.text) {
-      ctx.fillStyle = f.color; ctx.font = 'bold 13px ui-monospace'; ctx.textAlign = 'center';
-      ctx.fillText(f.text, f.x, f.y);
-    } else {
-      ctx.fillStyle = f.color; ctx.fillRect(f.x - 1.5, f.y - 1.5, 3, 3);
-    }
-  }
-  ctx.globalAlpha = 1;
-
-  // ── HUD: hearts + loot ──
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  for (let i = 0; i < P.maxHp; i++) {
-    ctx.fillStyle = i < P.hp ? '#ff4a6a' : '#3a2030';
-    ctx.font = 'bold 22px ui-monospace'; ctx.fillText('♥', 24 + i * 26, 40);
-  }
-  ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 20px ui-monospace'; ctx.textAlign = 'right';
-  ctx.fillText(`◆ ${Math.floor(sg.loot)}  ·  ${sg.killed} slain`, W - 24, 40);
-  drawPauseChip(16, 62);
-
-  // prompts
-  if (!sg.result) {
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#c89aff'; ctx.font = 'bold 14px ui-monospace';
-    ctx.fillText('← →  move      SPACE  swing sword', W / 2, H - 30);
-    ctx.fillStyle = P.x < DOOR_X + 50 ? '#7aff9a' : '#4a6a52';
-    ctx.fillText('reach the LIFT and press ↑ to carry out your loot', W / 2, H - 12);
-  } else {
-    ctx.fillStyle = 'rgba(8,4,12,0.8)'; ctx.fillRect(0, H / 2 - 60, W, 120);
-    ctx.textAlign = 'center';
-    if (sg.result === 'caught') {
-      ctx.fillStyle = '#ff3a4a'; ctx.font = 'bold 46px ui-monospace';
-      ctx.fillText('OVERWHELMED!', W / 2, H / 2 - 6);
-      ctx.fillStyle = '#bfa45f'; ctx.font = '15px ui-monospace';
-      ctx.fillText('the loot scatters — and a strike', W / 2, H / 2 + 30);
-    } else {
-      ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 42px ui-monospace';
-      ctx.fillText(`CARRIED OUT ◆ ${Math.floor(sg.loot)}`, W / 2, H / 2 - 6);
-      ctx.fillStyle = '#bfa45f'; ctx.font = '15px ui-monospace';
-      ctx.fillText(`${sg.killed} spiders slain`, W / 2, H / 2 + 30);
-    }
-  }
-}
-
-function drawSwordPlayer(P, sg) {
-  const x = P.x, y = PLAT_Y;          // feet on the ledge
-  const inv = P.invuln > 0;           // brief invulnerability after a hit
-  ctx.save();
-  // a soft pulse (never fully transparent) so it reads as "recovering", not a glitch
-  if (inv) ctx.globalAlpha = 0.6 + 0.4 * Math.abs(Math.sin(P.invuln * 12));
-  const hurtTint = P.hurtT > 0;       // flash red on the frame of impact
-  // legs
-  ctx.fillStyle = '#1a1410'; ctx.fillRect(x - 7, y - 14, 5, 14); ctx.fillRect(x + 2, y - 14, 5, 14);
-  // body + head (lean when hurt)
-  const lean = P.hurtT > 0 ? -P.facing * 4 : 0;
-  ctx.fillStyle = hurtTint ? '#c84a5a' : '#4a6a9a'; ctx.fillRect(x - 9 + lean, y - 36, 18, 23);
-  ctx.fillStyle = '#d4a878'; ctx.beginPath(); ctx.arc(x + lean, y - 44, 8, 0, 7); ctx.fill();
-  // a little cap
-  ctx.fillStyle = '#2a2018'; ctx.fillRect(x - 8 + lean, y - 50, 16, 4); ctx.fillRect(x - 5 + lean, y - 54, 10, 5);
-
-  // sword
-  const swingP = P.swing > 0 ? Math.min(1, (0.22 - P.swing) / 0.22) : -1;
-  ctx.strokeStyle = '#e8eef6'; ctx.lineWidth = 3; ctx.lineCap = 'round';
-  if (swingP >= 0) {
-    // an arc sweep in front
-    const a0 = -1.1, a1 = 0.9, ang = a0 + (a1 - a0) * swingP;
-    const bx = x + P.facing * 8, by = y - 26;
-    ctx.strokeStyle = `rgba(200,230,255,${0.5 - swingP * 0.4})`;
-    ctx.lineWidth = 10; ctx.beginPath();
-    ctx.arc(bx, by, 34, P.facing > 0 ? a0 : Math.PI - a0, P.facing > 0 ? ang : Math.PI - ang, P.facing < 0);
-    ctx.stroke();
-    ctx.strokeStyle = '#e8eef6'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(bx, by);
-    ctx.lineTo(bx + P.facing * Math.cos(ang) * 38, by + Math.sin(ang) * 38); ctx.stroke();
-  } else {
-    // resting: sword held out
-    ctx.beginPath(); ctx.moveTo(x + P.facing * 6, y - 28); ctx.lineTo(x + P.facing * 34, y - 34); ctx.stroke();
-  }
-  ctx.restore();
-}
+// (drawSpider/drawSwordPlayer — the old ledge renderer — are gone; the maze
+// renderer lives in src/maze.js. drawWebSpider stays: boss brood + maze swarm.)
 
 function drawWebSpider(s) {
   const x = s.x, y = s.y;

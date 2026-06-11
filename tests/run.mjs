@@ -447,64 +447,143 @@ test('maze visit: the world freezes, and the far door walks you out', (G) => {
   assert.equal(G.game.state, 'MAZE');
   const mz = G.game.maze;
   assert.equal(Math.floor(mz.player.x), mz.entry.x, 'you arrive at the entry');
+  mz.spiders = []; mz.spawnTimer = 999;             // a quiet visit, for the clock check
   G.step(60);                                       // a second in the office
   assert.equal(rider.patience, patBefore, 'upstairs, nobody ages while you are below');
   mz.player.x = mz.exit.x + 0.5; mz.player.y = mz.exit.y + 0.5;
   G.step(2);
-  assert.equal(G.game.state, 'PLAYING', 'stepping into the other lift brings you home');
+  assert.equal(mz.result, 'out', 'stepping into the other lift starts the exit');
+  G.step(140);                                      // the moment plays out
+  assert.equal(G.game.state, 'PLAYING', 'and brings you home');
   assert.equal(G.game.maze, null, 'the office is gone behind you');
   assert.ok(G.doorsOpen(), 'the lift opens at the lobby');
 });
 
-// ── Spider Floor ─────────────────────────────────────────────────────────────
+// ── Spider Floor (the webbed office) ─────────────────────────────────────────
 
-// step off the lift onto the Spider Floor ledge
-const enterWeb = (G) => {
+// park below the lobby with the doors open — the office takes you
+const enterOffice = (G) => {
   G.game.spider.open = true; G.game.spider.window = 13;
   const e = G.game.elev; e.y = G.SPIDER_Y; e.v = 0; e.doorTarget = 1; e.doors = 1;
   G.step(3);
-  return G.game.spiderGame;
+  return G.game.maze;
 };
+// quiet the office so a test can stage exactly what it wants
+const calm = (mz) => { mz.spiders = []; mz.spitters = []; mz.cocoons = []; mz.spawnTimer = 999; };
 
-test('Spider Floor: a sword swing slays a spider for loot', (G) => {
+test('the shaft below the lobby opens into the webbed office', (G) => {
   G.run = G.newRun(); G.startShift();
-  const sg = enterWeb(G);
-  assert.equal(G.game.state, 'SPIDER', 'stepped onto the ledge with a sword');
-  sg.spiders = [];
-  const P = sg.player; P.facing = 1;
-  G.spawnWebSpider(sg); const s = sg.spiders.at(-1);
-  s.state = 'crawl'; s.y = G.PLAT_Y - 12; s.x = P.x + 26; s.dead = false;
-  const lootBefore = sg.loot;
-  G.keys.add(' '); G.step(3); G.keys.delete(' ');
-  assert.ok(s.dead, 'the spider was cut down');
-  assert.ok(sg.loot > lootBefore, 'killing it paid loot');
+  const mz = enterOffice(G);
+  assert.equal(G.game.state, 'MAZE', 'stepped off into the office');
+  assert.ok(mz && mz.grid, 'a maze was generated');
+  assert.equal(G.save.stats.spiderVisits, 1, 'the visit counts');
+  assert.equal(G.run.mazeVisits, 1, 'and the run remembers it');
 });
 
-test('Spider Floor: bailing at the lift door carries out your loot', (G) => {
+test('auto-sword: no button — it cleaves whatever bunches into the wedge', (G) => {
   G.run = G.newRun(); G.startShift();
-  const sg = enterWeb(G);
-  sg.loot = 7; sg.player.x = G.DOOR_X + 8;
+  const mz = enterOffice(G); calm(mz);
+  const P = mz.player;
+  mz.spiders.push(
+    { x: P.x + 0.7, y: P.y, drop: 0, speed: 0, sway: 0, size: 12, dead: false, deadT: 0 },
+    { x: P.x + 0.5, y: P.y + 0.4, drop: 0, speed: 0, sway: 0, size: 12, dead: false, deadT: 0 },
+  );
+  mz.swingCool = 0;
+  const xpBefore = G.run.xp;
+  G.step(4);
+  assert.ok(mz.spiders.every(s => s.dead), 'one swing took both');
+  assert.equal(mz.killed, 2);
+  assert.equal(mz.loot, 2 * mz.lootPerKill, 'loot per kill, twice');
+  assert.equal(G.save.stats.spiders, 2, 'lifetime kills recorded');
+  assert.ok(G.run.xp > xpBefore || G.run.level > 0, 'the web is a classroom');
+});
+
+test('carrying out through the far door banks the loot', (G) => {
+  G.run = G.newRun(); G.startShift();
+  const mz = enterOffice(G); calm(mz);
+  mz.loot = 7;
+  mz.player.x = mz.exit.x + 0.5; mz.player.y = mz.exit.y + 0.5;
   const before = G.run.parts;
-  G.keys.add('arrowup'); G.step(3); G.keys.delete('arrowup');
-  G.step(140);     // let the exit resolve
+  G.step(3);
+  assert.equal(mz.result, 'out', 'stepping into the lift starts the exit');
+  G.step(140);
   assert.equal(G.game.state, 'PLAYING');
   assert.equal(G.run.parts, before + 7, 'banked the loot');
+  assert.ok(G.doorsOpen(), 'home at the lobby, doors open');
 });
 
-test('Spider Floor: getting overwhelmed costs a strike and banks nothing', (G) => {
+test('overwhelmed in the office: a strike, and the loot stays behind', (G) => {
   G.run = G.newRun(); G.startShift();
-  const sg = enterWeb(G);
+  const mz = enterOffice(G); calm(mz);
   const before = G.run.parts, strikesBefore = G.game.strikes;
-  const P = sg.player; P.hp = 1; P.invuln = 0;
-  sg.spiders = [];
-  G.spawnWebSpider(sg); const s = sg.spiders.at(-1);
-  s.state = 'crawl'; s.y = G.PLAT_Y - 12; s.x = P.x + 4; s.dead = false;   // right on top
+  const P = mz.player;
+  P.hp = 1; P.invuln = 0;
+  mz.loot = 9;
+  mz.spiders.push({ x: P.x + 0.2, y: P.y, drop: 0, speed: 2, sway: 0, size: 12, dead: false, deadT: 0 });
+  mz.swingCool = 999;                      // the sword is busy being dramatic
   let f = 0;
-  while (G.game.state === 'SPIDER' && G.game.spiderGame && !G.game.spiderGame.result && f < 400) { G.update(1 / 60); f++; }
-  assert.equal(G.game.spiderGame.result, 'caught');
+  while (G.game.state === 'MAZE' && !G.game.maze.result && f < 400) { G.update(1 / 60); f++; }
+  assert.equal(G.game.maze.result, 'caught');
   G.step(140);
+  assert.equal(G.game.state, 'PLAYING');
   assert.equal(G.run.parts, before, 'no loot banked');
   assert.equal(G.game.strikes, strikesBefore + 1, 'took a strike');
+});
+
+test('cocoons crack open under the sword for loot, hearts, or fuses', (G) => {
+  G.run = G.newRun(); G.startShift();
+  const mz = enterOffice(G); calm(mz);
+  const P = mz.player;
+  P.hp = 2;                                 // leave room for a heart roll
+  mz.cocoons.push({ x: P.x + 0.6, y: P.y, opened: false, sway: 0 });
+  mz.swingCool = 0;
+  const xpBefore = G.run.xp, fusesBefore = G.run.fuses, lootBefore = mz.loot;
+  G.step(4);
+  assert.ok(mz.cocoons[0].opened, 'the sword opens it when nothing breathes nearby');
+  assert.ok(G.run.xp > xpBefore || G.run.level > 0, 'always pays XP');
+  assert.ok(mz.loot > lootBefore || G.run.fuses > fusesBefore || P.hp === 3,
+    'and one of: carried loot, a fuse, a heart');
+});
+
+test('spitters (visit 2+) web your feet to the carpet', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.run.mazeVisits = 1;                     // so this entry is visit #2
+  G.enterMaze();
+  const mz = G.game.maze;
+  assert.ok(mz.spitters.length >= 1, 'the second visit has spitters');
+  const P = mz.player;
+  mz.spiders = []; mz.cocoons = []; mz.spawnTimer = 999;
+  mz.globs.push({ x: P.x, y: P.y, sx: P.x, sy: P.y, tx: P.x, ty: P.y, t: 0, dur: 0.01 });
+  G.step(3);
+  assert.ok(P.rooted > 0, 'webbed in place');
+  G.keys.add('arrowdown'); const yBefore = P.y; G.step(5); G.keys.delete('arrowdown');
+  assert.equal(P.y, yBefore, 'rooted feet do not move');
+});
+
+test('the flow field walks a far spider around the cubicles toward you', (G) => {
+  G.run = G.newRun(); G.startShift();
+  const mz = enterOffice(G); calm(mz);
+  G.spawnMazeSpider(mz);
+  const s = mz.spiders[0];
+  s.drop = 0;
+  const d0 = G.bfsDistances(mz.grid, Math.floor(mz.player.x), Math.floor(mz.player.y))[Math.floor(s.y)][Math.floor(s.x)];
+  G.step(120);                              // two seconds of pursuit
+  const d1 = G.bfsDistances(mz.grid, Math.floor(mz.player.x), Math.floor(mz.player.y))[Math.floor(s.y)][Math.floor(s.x)];
+  assert.ok(d1 < d0, `it closed the maze distance (${d0} → ${d1})`);
+});
+
+test('the third visit hangs THE THREAD from a hole in the ceiling', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.run.mazeVisits = 2;                     // so this entry is visit #3
+  G.enterMaze();
+  const mz = G.game.maze;
+  assert.ok(mz.thread, 'the thread room exists');
+  calm(mz);
+  mz.player.x = mz.thread.x; mz.player.y = mz.thread.y;
+  G.step(2);
+  assert.ok(mz.threadSeen, 'you saw it');
+  assert.equal(G.save.stats.sawThread, 1, 'and it is remembered');
+  assert.ok(G.game.banner && /UP/.test(G.game.banner.text), 'the truth, in so many words');
 });
 
 // ── cross-run meta-progression ───────────────────────────────────────────────
@@ -790,8 +869,10 @@ test('a full career plays many shifts through the live loop without breaking', (
     } else if (st === 'SHIFT_DONE') {
       G.openShop();
       G.startShift();
-    } else if (st === 'SPIDER') {
-      G.keys.add('arrowup'); G.step(3); G.keys.delete('arrowup'); G.step(100);
+    } else if (st === 'MAZE') {
+      const mz = G.game.maze;
+      mz.player.x = mz.exit.x + 0.5; mz.player.y = mz.exit.y + 0.5;
+      G.step(2); G.step(120);                       // step into the lift, ride the exit out
     } else if (st === 'FIRED') break;
   }
   assert.ok(G.run.shiftNum >= 2, `played multiple shifts (reached ${G.run.shiftNum})`);

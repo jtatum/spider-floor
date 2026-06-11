@@ -66,7 +66,7 @@ function handleKey(k) {
   const st = menu || (game ? game.state : 'TITLE');
 
   if (k === 'm') { toggleMute(); return; }     // mute works everywhere
-  const pausable = !menu && (st === 'PLAYING' || st === 'SPIDER' || st === 'BOSS' || st === 'MAZE');
+  const pausable = !menu && (st === 'PLAYING' || st === 'BOSS' || st === 'MAZE');
   if (paused) {                                 // frozen: only resume gets through
     if (k === 'p' || k === 'escape') setPaused(false);
     return;
@@ -91,9 +91,8 @@ function handleKey(k) {
     if (k === 'w') { menu = 'WORKSHOP'; }
     if (k === 'a') { menu = 'ACH'; }
     if (k === 's') { menu = 'SETTINGS'; }
-    // DEV PREVIEW (Spider Floor v2, session 1): walk the webbed office. The old
-    // ledge stays the live spider floor until the maze lands whole; this door
-    // comes out when sessions 2-3 (swarm, loot, escalation) replace it.
+    // DEV: jump straight into the webbed office (the live Spider Floor) for
+    // playtesting, without waiting for a shaft window to roll.
     if (k === 'x') { run = newRun(save.lastOperator || 'sal'); startShift(); enterMaze(); }
     return;
   }
@@ -331,7 +330,6 @@ function update(dt) {
   if (game && (game.state === 'SHIFT_DONE' || game.state === 'FIRED')) game.doneT += dt;
   if (game) updateFx(dt);   // particles / floating text decay in every state
 
-  if (game && game.state === 'SPIDER') { updateSpider(dt); return; }
   if (game && game.state === 'MAZE') { updateMaze(dt); return; }
   if (game && game.state === 'BOSS') { updateBoss(dt); return; }
   if (!game || game.state !== 'PLAYING') return;
@@ -445,9 +443,9 @@ function update(dt) {
     if (near < 34 && game.chimeCool <= 0) { sfx.near(); game.chimeCool = 0.45; }
   }
 
-  // step off into the Spider Floor: park at the webbed depth and open up
+  // step off into the Spider Floor: park at the webbed depth and the office takes you
   if (sp.open && Math.abs(e.y - SPIDER_Y) < CFG.alignTolerance && isStopped() && doorsOpen()) {
-    enterSpider(); return;
+    enterMaze(); return;
   }
 
   // ── spawns ──
@@ -687,152 +685,10 @@ function losePassenger(p) {
   game.banner = { text: 'PASSENGER WALKED OFF', t: 1.2, color: '#aa3a32' };
 }
 
-// ────────────────────────────────────────────────────────── Spider Floor
-// You step off onto a webbed ledge with a sword. Spiders rappel from the dark
-// and crawl at you; cut them down for parts. Run out of hearts and they swarm
-// you (lose your loot + a strike). Bolt back to the lift door whenever you like
-// to carry out what you've earned. Greed vs. your own skin.
-
-const PLAT_Y = H - 150, PLAT_LEFT = 120, PLAT_RIGHT = W - 120, DOOR_X = PLAT_LEFT + 4;
-
-function enterSpider() {
-  game.state = 'SPIDER';
-  const assoc = save.meta.knownAssociate;
-  game.spiderGame = {
-    t: 0, result: null, exitT: 0,
-    player: { x: W / 2, facing: 1, hp: 3, maxHp: 3, swing: 0, swingCool: 0, invuln: 0, hurtT: 0 },
-    spiders: [], fx: [], loot: 0,
-    spawnTimer: 0.8,
-    spawnEvery: Math.max(0.95, 2.1 - run.shiftNum * 0.07),
-    lootPerKill: 2 + (assoc >= 2 ? 1 : 0),
-    spaceWas: false, hitFlash: 0, killed: 0, hitTaken: false,
-  };
-  save.stats.spiderVisits++; checkAchievements();
-  sfx.spider();
-}
-
-function spawnWebSpider(sg) {
-  const x = PLAT_LEFT + 30 + Math.random() * (PLAT_RIGHT - PLAT_LEFT - 60);
-  // both descent and crawl speed climb with how long you've lingered — the web
-  // gets genuinely faster, so the longer you farm the more it outruns your blade
-  const webHeat = runHeat() >= 5 ? 1.25 : 1;   // THE WEB REMEMBERS
-  sg.spiders.push({
-    x, y: 30 + Math.random() * 30,
-    vy: (80 + run.shiftNum * 3 + sg.t * 3.5 + Math.random() * 40) * webHeat,
-    dropAt: PLAT_Y - 60 - Math.random() * 110,
-    crawl: (54 + run.shiftNum * 3 + sg.t * 5 + Math.random() * 30) * webHeat,
-    state: 'descend', sway: Math.random() * 6, dead: false, deadT: 0, vyDead: 0,
-    size: 11 + Math.random() * 4, hitCool: 0,
-  });
-}
-function spiderPop(sg, x, y, color) {
-  for (let i = 0; i < 8; i++) {
-    const a = Math.random() * Math.PI * 2, s = 30 + Math.random() * 120;
-    sg.fx.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40, life: 0, max: 0.5, color });
-  }
-}
-
-function updateSpider(dt) {
-  const sg = game.spiderGame;
-  if (!sg) { game.state = 'PLAYING'; return; }
-  sg.t += dt;
-  if (sg.hitFlash > 0) sg.hitFlash -= dt;
-  for (const f of sg.fx) { f.life += dt; f.vy += 240 * dt; f.x += f.vx * dt; f.y += f.vy * dt; }
-  sg.fx = sg.fx.filter(f => f.life < f.max);
-
-  if (sg.result) { sg.exitT += dt; if (sg.exitT > 1.6) exitSpider(); return; }
-  const P = sg.player;
-
-  // ── move ──
-  let mx = 0;
-  if (heldLeft())  { mx -= 1; P.facing = -1; }
-  if (heldRight()) { mx += 1; P.facing = 1; }
-  P.x = Math.max(PLAT_LEFT + 14, Math.min(PLAT_RIGHT - 14, P.x + mx * 250 * dt));
-
-  // ── swing (edge-triggered) ──
-  const space = heldAction();
-  P.swingCool = Math.max(0, P.swingCool - dt);
-  if (space && !sg.spaceWas && P.swingCool <= 0) { P.swing = 0.22; P.swingCool = 0.30; sfx.sword(); }
-  sg.spaceWas = space;
-  if (P.swing > 0) P.swing -= dt;
-  if (P.invuln > 0) P.invuln -= dt;
-  if (P.hurtT > 0) P.hurtT -= dt;
-
-  // ── bail out the lift door ──
-  if (heldUp() && P.x < DOOR_X + 50) { sg.result = 'bailed'; sfx.chime(); return; }
-
-  // ── spawn waves, flooding harder the longer you linger ──
-  sg.spawnTimer -= dt;
-  if (sg.spawnTimer <= 0) {
-    spawnWebSpider(sg);
-    if (sg.t > 5 && Math.random() < 0.5) spawnWebSpider(sg);    // doubles
-    if (sg.t > 12 && Math.random() < 0.45) spawnWebSpider(sg);  // and triples
-    sg.spawnTimer = sg.spawnEvery * (0.7 + Math.random() * 0.5);
-    sg.spawnEvery = Math.max(0.28, sg.spawnEvery * 0.92);       // floods past your kill rate
-  }
-
-  // ── sword hitbox ──
-  const swinging = P.swing > 0.05;
-  const hx = P.x + P.facing * 30, hy = PLAT_Y - 22, reach = 48;
-
-  for (const s of sg.spiders) {
-    if (s.hitCool > 0) s.hitCool -= dt;
-    if (s.dead) { s.deadT += dt; s.vyDead += 480 * dt; s.y += s.vyDead * dt; s.x += s.vxDead * dt; continue; }
-    if (s.state === 'descend') {
-      s.y += s.vy * dt; s.sway += dt * 4;
-      if (s.y >= s.dropAt) s.state = 'drop';
-    } else if (s.state === 'drop') {
-      s.y += 300 * dt;
-      if (s.y >= PLAT_Y - 12) { s.y = PLAT_Y - 12; s.state = 'crawl'; }
-    } else if (s.state === 'crawl') {
-      const lunge = Math.abs(s.x - P.x) < 72 ? 2.3 : 1;        // it pounces when close
-      s.x += (Math.sign(P.x - s.x) || 1) * s.crawl * lunge * dt;
-      s.sway += dt * 12;
-      if (Math.abs(s.x - P.x) < 17 && P.invuln <= 0) {     // it reaches you
-        P.hp--; P.invuln = 0.7; P.hurtT = 0.4; sg.hitFlash = 0.3; sg.hitTaken = true;
-        flash('#7a1030', 0.25); shake(9); sfx.hurt();
-        s.x += (s.x < P.x ? -1 : 1) * 30; s.hitCool = 0.5;
-      }
-    }
-    if (swinging && !s.dead && Math.abs(s.x - hx) < reach && Math.abs(s.y - hy) < 44) {
-      s.dead = true; s.deadT = 0; s.vyDead = -160; s.vxDead = P.facing * 80;
-      sg.loot += sg.lootPerKill; sg.killed++;
-      gainXP(CFG.xpSpider);                 // the web is a classroom too
-      save.stats.spiders++; checkAchievements();
-      spiderPop(sg, s.x, s.y, '#ff3a5a'); floatSpiderText(sg, s.x, s.y - 20, `+${sg.lootPerKill}`);
-      sfx.slash();
-    }
-  }
-  sg.spiders = sg.spiders.filter(s => !(s.dead && (s.deadT > 0.9 || s.y > H + 40)));
-
-  if (P.hp <= 0 && !sg.result) { sg.result = 'caught'; shake(13); flash('#5a1a4a', 0.5); sfx.caught(); }
-}
-function floatSpiderText(sg, x, y, text) {
-  sg.fx.push({ x, y, vx: 0, vy: -40, life: 0, max: 0.9, color: '#ffd44a', text });
-}
-
-function exitSpider() {
-  const sg = game.spiderGame;
-  if (sg.result === 'caught') {
-    game.strikes++;
-    game.banner = { text: 'THE SPIDERS GOT YOU — STRIKE!', t: 2.2, color: '#aa3a32' };
-    flash('#5a1a4a', 0.4);
-  } else { // bailed with whatever you carried out
-    const got = Math.floor(sg.loot);
-    run.parts += got; game.partsThisShift += got;
-    game.banner = { text: got > 0 ? `CARRIED OUT +${got} ◆ (${sg.killed} slain)` : 'ESCAPED EMPTY-HANDED',
-                    t: 2.2, color: '#ffd44a' };
-    bumpStat('bestSpiderLoot', got);
-    bumpStat('bestRunParts', run.parts);
-    if (!sg.hitTaken && sg.killed >= 3) { save.stats.noHitClears++; checkAchievements(); }
-  }
-  // back up to the lobby; the webbed floor seals behind you
-  game.spider.open = false; game.spider.used = true; game.spider.glow = 0;
-  const e = game.elev;
-  e.y = 0; e.v = 0; e.doors = 1; e.doorTarget = 1; e.wasReady = false;
-  game.spiderGame = null;
-  game.state = 'PLAYING';
-}
+// (the old 1D "ledge" Spider Floor lived here — replaced wholesale by the
+// webbed-office maze in src/maze.js. The shaft entrance above now calls
+// enterMaze(); drawWebSpider survives in render.js for the boss brood and
+// the maze swarm.)
 
 // ──────────────────────────────────────────── the rooftop boss
 // The truth: the lift hangs from a giant spider's thread. You climb above the

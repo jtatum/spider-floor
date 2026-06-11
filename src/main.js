@@ -7,7 +7,7 @@
 const MUSIC_BY_SCREEN = {
   TITLE: 'title', OPERATOR: 'title', WORKSHOP: 'title', ACH: 'title', SETTINGS: 'title',   // title theme covers the menu cluster
   PLAYING: 'gameplay',                        // resumes across level-up detours (see audio.js)
-  LEVELUP: 'levelup', SHIFT_DONE: 'shop', SHOP: 'shop', SPIDER: 'spider', MAZE: 'spider', BOSS: 'boss', FIRED: 'fired',
+  LEVELUP: 'levelup', SHIFT_DONE: 'shop', SHOP: 'shop', MAZE: 'spider', BOSS: 'boss', FIRED: 'fired',
   VICTORY: 'victory',                         // the win song plays once, then hands off (see audio.js)
 };
 
@@ -48,7 +48,7 @@ else window.addEventListener('load', () => sfx.prefetchAll(), { once: true });
 
 // tab away mid-shift → the building waits for you
 window.addEventListener('blur', () => {
-  if (!menu && game && (game.state === 'PLAYING' || game.state === 'SPIDER' || game.state === 'BOSS' || game.state === 'MAZE')) {
+  if (!menu && game && (game.state === 'PLAYING' || game.state === 'BOSS' || game.state === 'MAZE')) {
     setPaused(true);
   }
 });
@@ -60,8 +60,7 @@ const HINTS = {
   PAUSED:   'PAUSED · tap or click an option · P resume',
   TITLE:    'SPACE clock in · W workshop · A achievements · M sound',
   PLAYING:  '↑/↓ crank · SPACE doors · P pause · hold R abandon run',
-  SPIDER:   '←/→ move · SPACE swing · ↑ at the door to bail out',
-  MAZE:     'WASD/arrows move · find the other lift door · P pause',
+  MAZE:     'WASD/arrows or drag to move · the sword swings itself · find the other lift',
   BOSS:     '↑/↓ crank · ram it when it drops · dodge the red',
   SHOP:     'F fuse · Z/X specials · R restock · ENTER start',
   LEVELUP:  '1-9 pick · R reroll · B banish · S skip (+2◆)',
@@ -137,11 +136,6 @@ function updateTouchUI() {
     set(touchEls.R, 't-down', '▼', 'hold');
     set(touchEls.A, ' ', 'DOORS', 'tap');
     set(touchEls.B, '', '');
-  } else if (st === 'SPIDER') {
-    set(touchEls.L, 't-left', '◀', 'hold');
-    set(touchEls.R, 't-right', '▶', 'hold');
-    set(touchEls.A, 't-act', 'SWING', 'hold');
-    set(touchEls.B, 't-up', 'LIFT', 'hold');
   } else if (st === 'BOSS') {
     set(touchEls.L, 't-up', '▲', 'hold');
     set(touchEls.R, 't-down', '▼', 'hold');

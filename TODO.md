@@ -37,17 +37,23 @@ Key decisions (agreed direction):
 - Limited vision in the dark → X-RAY power-up doubles as a map reveal.
 - Exit door uses the same green glow + arrow language as the main game.
 
-Build plan (~3 sessions, each shippable; the ledge stays until the maze lands whole):
+Build plan — ALL THREE SESSIONS SHIPPED. The maze IS the Spider Floor now; the
+old 1D ledge is deleted. X on the title = dev shortcut straight into a visit.
 - [x] Session 1: maze gen + connectivity tests, iso renderer, camera, 2D movement
-      (src/maze.js — dev preview: press X on the title screen)
-- [ ] Session 2: flow-field swarm, sword combat, cocoons/loot, exit + banking
-- [ ] Session 3: spitters, visit escalation (visit 3 = the open ceiling + THE
-      THREAD → unlocks the roof), mobile virtual joystick (shared with mobile todo),
-      balance + heat-5 hook
+- [x] Session 2: flow-field swarm, auto-sword cleave, cocoons (◆/heart/fuse + XP),
+      exit + banking, OVERWHELMED → strike
+- [x] Session 3: spitters + web-root globs (visit 2+), THE THREAD reveal (visit 3+,
+      save.stats.sawThread), virtual joystick (stick-only mobile), heat-5 hook,
+      X-RAY widens maze vision
 
-Still applies from v1 thinking:
+Open follow-ups:
+- [ ] **Balance the visit curve with human hands** — flood pacing
+      (spawnEvery 2.6 − t·0.022, floor 0.55s), sword (range 1.55 / cd 0.55 / wedge),
+      cocoon odds (62/23/15), spitter cadence. Tuned by arithmetic so far.
 - [ ] **Pre-opening rumble** — ~8s of dust + low noise before the floor opens, so
       missing the window is a choice, not a dice roll.
+- [ ] Consider: gate the roof on sawThread instead of spiderVisits ≥ 1 (the fiction
+      wants it; the pacing implications need James's playtest verdict).
 - [ ] (Deliberately NOT adding spider-floor-only upgrades to the level-up pool —
       dead cards 90% of a shift.)
 
