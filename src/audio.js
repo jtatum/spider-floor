@@ -56,6 +56,7 @@ const sfx = (() => {
     levelup:  { base: 'audio/levelup',  loopStart: 12.350, loopEnd: 60.390,  gain: 0.5 },
     shop:     { base: 'audio/shop',     loopStart: 20.299, loopEnd: 87.609,  gain: 0.5 },
     spider:   { base: 'audio/spider',   loopStart: 7.730,  loopEnd: 120.695, gain: 0.5 },
+    boss:     { base: 'audio/boss',     loopStart: 0.209,  loopEnd: 86.138,  gain: 0.5 },
     fired:    { base: 'audio/fired',    loopStart: 32.804, loopEnd: 90.831,  gain: 0.5 },
   };
   let musicGain = null, musicSrc = null, musicCur = null, musicReq = null;

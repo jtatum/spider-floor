@@ -7,7 +7,7 @@
 const MUSIC_BY_SCREEN = {
   TITLE: 'title', OPERATOR: 'title', WORKSHOP: 'title', ACH: 'title',   // title theme covers the menu cluster
   PLAYING: 'gameplay',                        // resumes across level-up detours (see audio.js)
-  LEVELUP: 'levelup', SHIFT_DONE: 'shop', SHOP: 'shop', SPIDER: 'spider', FIRED: 'fired',
+  LEVELUP: 'levelup', SHIFT_DONE: 'shop', SHOP: 'shop', SPIDER: 'spider', BOSS: 'boss', FIRED: 'fired',
 };
 
 let lastT = performance.now();
