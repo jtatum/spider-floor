@@ -11,6 +11,11 @@ const MUSIC_BY_SCREEN = {
   VICTORY: 'victory',                         // the win song plays once, then hands off (see audio.js)
 };
 
+// when does the music come out of the one sad cone above the doors?
+function wantsTinny(st, r) {
+  return st === 'LEVELUP' || (st === 'PLAYING' && !!(r && r.up && r.up.muzak > 0));
+}
+
 let lastT = performance.now();
 function loop(now) {
   const dt = Math.min(0.05, (now - lastT) / 1000);
@@ -25,6 +30,10 @@ function loop(now) {
   // theme across the survived/parts-shop flow (same track → no restart between them)
   const st = menu || (game ? game.state : 'TITLE');
   sfx.music(MUSIC_BY_SCREEN[st] || null);
+  // …and sometimes through the cabin speaker: level-ups always (you ARE in the
+  // lift), and with Cabin Muzak installed the gameplay bed turns diegetic —
+  // the upgrade soothes the riders by making the soundtrack elevator music.
+  sfx.setTinny(wantsTinny(st, typeof run !== 'undefined' ? run : null));
   updateHint();
   if (touchEnabled) updateTouchUI();
   requestAnimationFrame(loop);

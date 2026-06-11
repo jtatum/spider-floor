@@ -37,14 +37,35 @@ const sfx = (() => {
   // musicBus — so the settings sliders scale each family without touching the
   // per-sound envelopes or the music fade logic (which own their local gains)
   let sfxBus = null, musicBus = null, sfxVol = 1, musicVol = 1;
+  // the cabin speaker: a switchable lo-fi path for the music — band-limited and
+  // honky, like it's coming out of one sad cone above the doors. Crossfaded
+  // (never hard-switched) between the dry and speaker paths, both post-volume.
+  let tinny = false, musicDry = null, musicFx = null;
   function ensure() {
     if (ac) return;
     try {
       ac = new (window.AudioContext || window.webkitAudioContext)();
       master = ac.createGain(); master.gain.value = muted ? 0 : 0.32; master.connect(ac.destination);
       sfxBus = ac.createGain(); sfxBus.gain.value = sfxVol; sfxBus.connect(master);
-      musicBus = ac.createGain(); musicBus.gain.value = musicVol; musicBus.connect(master);
+      musicBus = ac.createGain(); musicBus.gain.value = musicVol;
+      musicDry = ac.createGain(); musicDry.gain.value = tinny ? 0 : 1;
+      musicBus.connect(musicDry); musicDry.connect(master);
+      const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 480; hp.Q.value = 0.7;
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600; lp.Q.value = 0.9;
+      const honk = ac.createBiquadFilter(); honk.type = 'peaking'; honk.frequency.value = 1500; honk.gain.value = 6; honk.Q.value = 1.1;
+      const makeup = ac.createGain(); makeup.gain.value = 1.7;   // the band-cut steals energy
+      musicFx = ac.createGain(); musicFx.gain.value = tinny ? 1 : 0;
+      musicBus.connect(hp); hp.connect(lp); lp.connect(honk); honk.connect(makeup);
+      makeup.connect(musicFx); musicFx.connect(master);
     } catch (e) { ac = null; }
+  }
+  function setTinny(on) {
+    if (on === tinny) return;
+    tinny = on;
+    if (!ac || !musicDry) return;        // pre-gesture: remembered, applied at build
+    const t = ac.currentTime;
+    musicDry.gain.setTargetAtTime(on ? 0 : 1, t, 0.08);
+    musicFx.gain.setTargetAtTime(on ? 1 : 0, t, 0.08);
   }
   function resume() { ensure(); if (ac && ac.state === 'suspended') ac.resume(); }
   function setMuted(m) {
@@ -213,7 +234,9 @@ const sfx = (() => {
     o.start(t); o.stop(t + dur + 0.02);
   }
   return {
-    resume, setMuted, setVolumes, setMotor, music, prefetchAll,
+    resume, setMuted, setVolumes, setMotor, music, prefetchAll, setTinny,
+    musicState: () => ({ track: musicCur, tinny }),   // debugging audio is hell without eyes
+
     creak() { tone(170 + Math.random() * 70, 0.13, 'sawtooth', 0.12, 65 + Math.random() * 20); },
     ding()  { tone(880, 0.12, 'sine', 0.5); tone(1320, 0.16, 'sine', 0.3); },
     near()  { tone(1040, 0.05, 'sine', 0.25); },

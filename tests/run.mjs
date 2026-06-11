@@ -608,6 +608,14 @@ test('the third visit hangs THE THREAD from a hole in the ceiling', (G) => {
   assert.ok(G.game.banner && /UP/.test(G.game.banner.text), 'the truth, in so many words');
 });
 
+test('the cabin speaker: level-ups always; gameplay only with Cabin Muzak', (G) => {
+  assert.equal(G.wantsTinny('LEVELUP', null), true, 'you pick from inside the lift');
+  assert.equal(G.wantsTinny('PLAYING', { up: { muzak: 0 } }), false, 'no muzak, full fidelity');
+  assert.equal(G.wantsTinny('PLAYING', { up: { muzak: 1 } }), true, 'muzak makes the bed diegetic');
+  assert.equal(G.wantsTinny('SHOP', { up: { muzak: 2 } }), false, 'the depot has real speakers');
+  assert.equal(G.wantsTinny('TITLE', null), false);
+});
+
 test('the Tetris rule: headers defect to Cyrillic, body text stays loyal', (G) => {
   assert.equal(G.cyr('THE SPIDER FLOOR'), 'THЭ SPIDЭЯ FLOOЯ');
   assert.equal(G.cyr('SHIFT 3 SURVIVED'), 'SHIFT 3 SUЯVIVЭD');
