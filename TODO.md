@@ -13,19 +13,36 @@ The working list. Roughly ordered within each section; strike things as they lan
 - [ ] **Mobile: odds and ends** — bigger tap targets on workshop/achievement cards;
       mute reachable by touch (lives in the modal).
 
-## The Spider Floor (making the namesake earn its title)
+## The Spider Floor v2: the webbed office (isometric maze)
 
-- [ ] **Visit escalation per career** — visit 1: the ledge as-is. Visit 2+: cocoons
-      on the ledge to slash open (◆ / Spare Fuse / power-up) — spatial greed beyond
-      kill-farming. Visit 3: the room is deeper and you SEE THE THREAD going up —
-      that moment is what unlocks the roof (same gate, real fiction).
-- [ ] **The floor moves** — sometimes opens *between* floors (a webbed gap at 4½
-      that shouldn't exist), not always below the lobby. Variable detour cost.
-- [ ] **Pre-opening rumble** — ~8s of dust + low noise before the banner, so missing
-      the window is a choice, not a dice roll.
-- [ ] **One new enemy: the spitter** — lobs a web glob; dodge or be rooted a beat.
-      Later visits only. (Deliberately NOT adding spider-floor-only upgrades to the
-      level-up pool — dead cards 90% of a shift.)
+The redesign (James's pitch): an isometric office-floor maze — webbed cubicles,
+generated fresh each visit. VS-style swarm you dodge and carve through with the
+manual sword. You enter by lift; the door seals behind you; the way OUT is a
+different lift door somewhere in the maze. Loot deeper = escape-distance owed.
+
+Key decisions (agreed direction):
+- LOW cubicle walls — see the swarm over them, path around them. Legible terror.
+- Flow-field swarm AI — BFS distance field from the player; spiders descend the
+  gradient. Liquid VS swarming around walls, dozens of spiders, headless-testable.
+- Braided maze gen — backtracker + ~20% walls knocked out for loops. Dead ends in
+  a swarm game are death sentences; loops are decisions.
+- Manual sword (facing = last move dir, edge-triggered arc) — no auto-attack.
+- Screen-relative movement over the iso projection. Nobody thinks in diamonds.
+- Limited vision in the dark → X-RAY power-up doubles as a map reveal.
+- Exit door uses the same green glow + arrow language as the main game.
+
+Build plan (~3 sessions, each shippable; the ledge stays until the maze lands whole):
+- [ ] Session 1: maze gen + connectivity tests, iso renderer, camera, 2D movement
+- [ ] Session 2: flow-field swarm, sword combat, cocoons/loot, exit + banking
+- [ ] Session 3: spitters, visit escalation (visit 3 = the open ceiling + THE
+      THREAD → unlocks the roof), mobile virtual joystick (shared with mobile todo),
+      balance + heat-5 hook
+
+Still applies from v1 thinking:
+- [ ] **Pre-opening rumble** — ~8s of dust + low noise before the floor opens, so
+      missing the window is a choice, not a dice roll.
+- [ ] (Deliberately NOT adding spider-floor-only upgrades to the level-up pool —
+      dead cards 90% of a shift.)
 
 ## Later
 
