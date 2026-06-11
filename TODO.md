@@ -26,7 +26,11 @@ Key decisions (agreed direction):
   gradient. Liquid VS swarming around walls, dozens of spiders, headless-testable.
 - Braided maze gen — backtracker + ~20% walls knocked out for loops. Dead ends in
   a swarm game are death sentences; loops are decisions.
-- Manual sword (facing = last move dir, edge-triggered arc) — no auto-attack.
+- AUTO sword, VS-faithful (James's call, the right one): swings on a visible
+  cooldown at the NEAREST spider in range — not movement-facing, since you're
+  usually running away. The arc CLEAVES everything in the wedge, so herding the
+  flow-field until spiders bunch into one swing is the whole skill. Movement is
+  the only verb → spider floor needs zero buttons on mobile (stick only).
 - Screen-relative movement over the iso projection. Nobody thinks in diamonds.
 - Limited vision in the dark → X-RAY power-up doubles as a map reveal.
 - Exit door uses the same green glow + arrow language as the main game.
