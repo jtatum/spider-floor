@@ -52,10 +52,30 @@ function toggleShake() {
   persist();
   sfx.door();
 }
+// export the flight recorder: clipboard if we can, a .json download if not
+let metCopied = 0;
+function copyMetrics() {
+  const blob = JSON.stringify(metricsAll(), null, 1);
+  const done = () => { metCopied = performance.now() + 1800; sfx.buy(); };
+  const fallback = () => {
+    try {
+      const a = document.createElement('a');
+      a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(blob);
+      a.download = 'spider-floor-metrics.json';
+      a.click();
+      done();
+    } catch (e) { sfx.buzz(); }
+  };
+  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(blob).then(done).catch(fallback);
+  } else fallback();
+}
+
 // abandon from the modal: drop the run and walk back to the title. (Hold-R
 // remains the keyboard quick-restart; this is the touch-reachable way out.)
 function abandonRun() {
   if (!abandonArm) { abandonArm = true; sfx.buzz(); return; }
+  metRunRecord('abandoned');
   setPaused(false);
   menu = null;
   game.state = 'TITLE';
@@ -342,7 +362,7 @@ function update(dt) {
   // hold R to abandon the run — a tap does nothing, so no fat-fingered wipes
   if (keys.has('r')) {
     game.abandonT = (game.abandonT || 0) + dt;
-    if (game.abandonT >= 1.0) { keys.delete('r'); run = newRun(run.operator); startShift(); return; }
+    if (game.abandonT >= 1.0) { keys.delete('r'); metRunRecord('abandoned'); run = newRun(run.operator); startShift(); return; }
   } else game.abandonT = 0;
   if (game.introT > 0) game.introT = Math.max(0, game.introT - dt);
   const e = game.elev;
@@ -524,6 +544,11 @@ function update(dt) {
         run.parts += fare;
         game.partsThisShift += fare;
         gainXP(CFG.xpDeliver + CFG.xpPerFare * fare);   // rich fares teach you more
+        // flight recorder: fare economics + "felt tight" deliveries
+        game.met.fares += fare;
+        game.met.fareCount++;
+        if (p.origin > 0) game.met.downDelivered++;
+        if (p.patience < 2) game.met.closeCalls++;
         // achievement stats
         save.stats.deliveries++;
         if (p.kind === 'vip') save.stats.vips++;
@@ -676,7 +701,7 @@ function losePassenger(p) {
   const tookStairs = p.state === 'waiting' && p.origin > 0 && runHeat() < 2;
   p.state = 'left';
   p.removeAt = game.t + 0.7;
-  if (tookStairs) return;
+  if (tookStairs) { if (game.met) game.met.stairsMissed++; return; }
   game.walkoffsThisShift++;       // any walk-off (even forgiven) breaks a "spotless" shift
   if (game.m.apology && !game.apologyUsed) {   // Apology Notes: first walk-off each shift is free
     game.apologyUsed = true;
@@ -689,6 +714,7 @@ function losePassenger(p) {
   }
   if (run.fuses > 0) {           // a Spare Fuse eats the strike
     run.fuses--;
+    if (game.met) game.met.fusesBurned++;
     flash('#d4a050', 0.3);
     shake(4);
     floatText('FUSE BLOWN', '#d4a050');
@@ -849,12 +875,14 @@ function exitBoss() {
     bumpStat('heatCleared', run.heat || 0);   // climbing the ladder unlocks the next rung
     checkAchievements();          // Cut the Cord (+30★) and heat achievements fire here
     persist();
+    metRunRecord('victory');
     game.state = 'VICTORY';
     game.doneT = 0;
   } else {
     save.best.shifts = Math.max(save.best.shifts, run.shiftNum - 1);
     save.best.delivered = Math.max(save.best.delivered, run.totalDelivered);
     persist();
+    metRunRecord('bossLost');
     game.bossLost = true;
     game.state = 'FIRED';
     game.doneT = 0;

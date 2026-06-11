@@ -256,6 +256,16 @@ function drawSettingsRows(inRun) {
   by += 50;
   drawButton(`SCREEN SHAKE  ${save.shake === false ? 'OFF' : 'ON'}`, bx, by, bw, bh, toggleShake, false);
   by += bh + gap;
+  if (!inRun) {
+    // the flight recorder lives here: copy it out, paste it at the mechanic
+    drawButton(metCopied > performance.now() ? '✓  COPIED — paste it to Claude' : '⎘  COPY METRICS FOR TUNING',
+               bx, by, bw, bh, copyMetrics, false);
+    by += bh + 4;
+    ctx.fillStyle = '#5a523e'; ctx.font = '11px ui-monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(`recorded locally: ${metricsSummary()} — never leaves this machine`, W / 2, by + 6);
+    by += 22;
+  }
   if (inRun) {
     by += 8;
     // abandon wants a deliberate second tap — and reads like it

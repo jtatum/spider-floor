@@ -162,7 +162,7 @@ function enterMaze() {
               hp: 3, maxHp: 3, invuln: 0, rooted: 0 },
     cam: null, t: 0,
     spiders: [], globs: [], cocoons, spitters, thread, threadSeen: false,
-    loot: 0, killed: 0, hitTaken: false, hitFlash: 0, fx: [],
+    loot: 0, killed: 0, hitTaken: false, hits: 0, rootsTaken: 0, hitFlash: 0, fx: [],
     spawnTimer: 2.2,
     spawnEvery: Math.max(1.2, 2.6 - run.shiftNum * 0.07) / mazeHeat(),
     lootPerKill: 2 + (assoc >= 2 ? 1 : 0),
@@ -177,6 +177,18 @@ function enterMaze() {
 
 function finishMaze() {
   const mz = game.maze;
+  // ── flight recorder: how the visit actually went ──
+  metRecord('maze', {
+    visit: run.mazeVisits || 0, shift: run.shiftNum, heat: run.heat || 0, op: run.operator,
+    dur: Math.round(mz.t),
+    result: mz.result,                                   // 'out' | 'caught'
+    kills: mz.killed,
+    loot: Math.floor(mz.loot),                           // banked if 'out', lost if 'caught'
+    cocoons: mz.cocoons.filter(c => c.opened).length,
+    cocoonsTotal: mz.cocoons.length,
+    hits: mz.hits, roots: mz.rootsTaken,
+    walkPace: mz.maxDist ? Math.round((mz.t / mz.maxDist) * 100) / 100 : 0,   // s per tile of the direct route
+  });
   if (mz.result === 'caught') {
     game.strikes++;
     game.banner = { text: 'THE OFFICE KEEPS WHAT YOU CARRIED — STRIKE!', t: 2.2, color: '#aa3a32' };
@@ -322,7 +334,7 @@ function updateMaze(dt) {
     }
     tryMove(mz, s, vx * s.speed * dt, vy * s.speed * dt, 0.22);
     if (dEu < 0.48 && P.invuln <= 0) {   // it reaches you
-      P.hp--; P.invuln = 0.8; mz.hitFlash = 0.3; mz.hitTaken = true;
+      P.hp--; P.invuln = 0.8; mz.hitFlash = 0.3; mz.hitTaken = true; mz.hits++;
       flash('#7a1030', 0.25); shake(9); sfx.hurt();
       tryMove(mz, s, -vx * 0.9, -vy * 0.9, 0.22);   // it recoils to lunge again
     }
@@ -350,6 +362,7 @@ function updateMaze(dt) {
     if (k >= 1) {
       if (Math.hypot(P.x - g.tx, P.y - g.ty) < 0.55) {
         P.rooted = Math.max(P.rooted, 0.9);
+        mz.rootsTaken++;
         mazeFxText(mz, P.x, P.y, 'WEBBED', '#cdbde0');
         sfx.buzz();
       }

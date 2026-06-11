@@ -586,6 +586,61 @@ test('the third visit hangs THE THREAD from a hole in the ceiling', (G) => {
   assert.ok(G.game.banner && /UP/.test(G.game.banner.text), 'the truth, in so many words');
 });
 
+// ── metrics: the local flight recorder ───────────────────────────────────────
+
+test('a survived shift writes a flight-recorder entry with the tuning signals', (G) => {
+  G.run = G.newRun('sal'); G.startShift();
+  G.game.passengers = [];
+  const p = addRider(G, 2, 'normal');
+  p.patience = 1.5;                                // a squeaker
+  openDoorsAt(G, 2);
+  G.step(3);
+  G.game.delivered = G.game.quota;
+  G.step(2);
+  const recs = G.metricsAll().filter(r => r.type === 'shift');
+  assert.equal(recs.length, 1, 'one shift record');
+  const r = recs[0];
+  assert.equal(r.outcome, 'survived');
+  assert.equal(r.quota, G.game.quota);
+  assert.equal(r.fareCount, 1, 'the delivery was counted');
+  assert.ok(r.fares >= 1, 'and its fare');
+  assert.equal(r.closeCalls, 1, 'the squeaker registered');
+  assert.equal(r.partsEnd, G.run.parts);
+  assert.ok('levelsGained' in r && 'dur' in r && 'walkoffs' in r);
+});
+
+test('a maze visit writes its record; a fired run writes a run record', (G) => {
+  G.run = G.newRun('sal'); G.startShift();
+  G.enterMaze();
+  const mz = G.game.maze;
+  mz.spiders = []; mz.spitters = []; mz.spawnTimer = 999;
+  mz.loot = 5; mz.killed = 2;
+  mz.player.x = mz.exit.x + 0.5; mz.player.y = mz.exit.y + 0.5;
+  G.step(2); G.step(120);
+  const mrec = G.metricsAll().filter(r => r.type === 'maze');
+  assert.equal(mrec.length, 1);
+  assert.equal(mrec[0].result, 'out');
+  assert.equal(mrec[0].loot, 5);
+  assert.equal(mrec[0].kills, 2);
+  G.run.up.motor = 2;
+  G.game.strikes = G.maxStrikes();
+  G.step(2);                                       // fired
+  const rrec = G.metricsAll().filter(r => r.type === 'run');
+  assert.equal(rrec.length, 1);
+  assert.equal(rrec[0].outcome, 'fired');
+  assert.ok(rrec[0].build.includes('motor:2'), 'the build rides along');
+  assert.equal(rrec[0].mazeVisits, 1);
+});
+
+test('the recorder is a ring buffer and stays out of the save', (G) => {
+  for (let i = 0; i < 450; i++) G.metRecord('shift', { i });
+  const all = G.metricsAll();
+  assert.equal(all.length, 400, 'capped');
+  assert.equal(all[0].i, 50, 'oldest records fell off the front');
+  assert.equal(G._localStorage.getItem('worstElevatorSave'), null, 'the save key is untouched');
+  assert.ok(G.metricsSummary().includes('400 shifts'), 'the summary counts what it holds');
+});
+
 // ── cross-run meta-progression ───────────────────────────────────────────────
 
 test('firing records the run, updates best, and persists', (G) => {

@@ -405,6 +405,45 @@ function loadSave() {
 function persist() { try { localStorage.setItem('worstElevatorSave', JSON.stringify(save)); } catch (e) {} }
 let save = loadSave();
 
+// ── metrics: a local-only flight recorder for difficulty tuning ──────────
+// Per-shift / per-maze-visit / per-run summaries, ring-buffered in their own
+// localStorage key (never touches the save, never leaves the machine). Export
+// from Settings → COPY METRICS, or call metricsAll() in the console.
+const MET_KEY = 'spiderFloorMetrics';
+const MET_CAP = 400;
+function metRecord(type, rec) {
+  try {
+    const arr = JSON.parse(localStorage.getItem(MET_KEY) || '[]');
+    arr.push({ v: 1, type, at: Date.now(), ...rec });
+    while (arr.length > MET_CAP) arr.shift();
+    localStorage.setItem(MET_KEY, JSON.stringify(arr));
+  } catch (e) {}
+}
+function metricsAll() {
+  try { return JSON.parse(localStorage.getItem(MET_KEY) || '[]'); } catch (e) { return []; }
+}
+function metricsSummary() {
+  const a = metricsAll();
+  const n = (t) => a.filter(r => r.type === t).length;
+  return `${n('shift')} shifts · ${n('maze')} visits · ${n('run')} runs`;
+}
+// compact "motor:2 dispatch:1" build string for run records
+function metBuild() {
+  return UPGRADES.filter(u => run.up[u.key] > 0).map(u => `${u.key}:${run.up[u.key]}`).join(' ');
+}
+function metRunRecord(outcome) {
+  if (!run || !run.shiftNum) return;
+  metRecord('run', {
+    outcome,                                  // 'fired' | 'victory' | 'bossLost' | 'abandoned'
+    op: run.operator, heat: run.heat || 0,
+    shifts: Math.max(0, run.shiftNum - (outcome === 'fired' || outcome === 'abandoned' ? 1 : 0)),
+    delivered: run.totalDelivered,
+    level: run.level, parts: run.parts,
+    mazeVisits: run.mazeVisits || 0,
+    build: metBuild(),
+  });
+}
+
 // ── achievements: the sole source of ★, with on-screen toasts ──
 let achToasts = [];
 function recomputePerks() { save.stats.perks = Object.values(save.meta).reduce((a, b) => a + b, 0); }
@@ -565,6 +604,9 @@ function startShift() {
     lvRerolls: (save.meta.rerollToken || 0) + (OP().lvRerollBonus || 0),  // free level-up rerolls, per shift
     levelUp: null,                           // the open pick-1-of-3, when state === 'LEVELUP'
     downTimer: introT + 5,                   // upstairs calls start after the day warms up
+    // flight-recorder counters for this shift (see metRecord)
+    met: { levelStart: run.level, fares: 0, fareCount: 0, downDelivered: 0,
+           closeCalls: 0, fusesBurned: 0, stairsMissed: 0 },
     m,
   };
 
@@ -636,9 +678,28 @@ function endShift(reason) {
     save.best.delivered = Math.max(save.best.delivered, run.totalDelivered);
     checkAchievements();
     persist();
+    metRunRecord('fired');
     game.state = 'FIRED';
     game.doneT = 0;
     sfx.fired();
   }
+  // ── flight recorder: how this shift actually went (bonus included) ──
+  const met = game.met || {};
+  metRecord('shift', {
+    shift: run.shiftNum, heat: run.heat || 0, op: run.operator,
+    mods: game.modifiers.map(md => md.key),
+    dur: Math.round(game.shiftTime),
+    quota: game.quota, delivered: game.delivered,
+    outcome: reason === 'quota' ? 'survived' : 'fired',
+    strikes: game.strikes, maxStrikes: maxStrikes(),
+    walkoffs: game.walkoffsThisShift, fusesBurned: met.fusesBurned || 0,
+    stairsMissed: met.stairsMissed || 0,
+    fares: met.fares || 0, fareCount: met.fareCount || 0,
+    downDelivered: met.downDelivered || 0,
+    closeCalls: met.closeCalls || 0,
+    bonus: game.bonus || 0,
+    partsEnd: run.parts,
+    levelEnd: run.level, levelsGained: run.level - (met.levelStart || 0),
+  });
 }
 

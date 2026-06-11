@@ -39,6 +39,7 @@ const SHIM = `
   enterBoss, updateBoss, exitBoss, BOSS,
   genMaze, bfsDistances, tryMove, screenDirToWorld, enterMaze, finishMaze, updateMaze, mazeWalkable,
   spawnMazeSpider, openCocoon,
+  metRecord, metricsAll, metricsSummary,
 };
 `;
 
