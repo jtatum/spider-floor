@@ -50,10 +50,10 @@ const sfx = (() => {
       musicBus = ac.createGain(); musicBus.gain.value = musicVol;
       musicDry = ac.createGain(); musicDry.gain.value = tinny ? 0 : 1;
       musicBus.connect(musicDry); musicDry.connect(master);
-      const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 480; hp.Q.value = 0.7;
-      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600; lp.Q.value = 0.9;
+      const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 520; hp.Q.value = 0.7;
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200; lp.Q.value = 0.9;
       const honk = ac.createBiquadFilter(); honk.type = 'peaking'; honk.frequency.value = 1500; honk.gain.value = 6; honk.Q.value = 1.1;
-      const makeup = ac.createGain(); makeup.gain.value = 1.7;   // the band-cut steals energy
+      const makeup = ac.createGain(); makeup.gain.value = 1.35;  // the band-cut steals energy (1.7 overshot — James's ears)
       musicFx = ac.createGain(); musicFx.gain.value = tinny ? 1 : 0;
       musicBus.connect(hp); hp.connect(lp); lp.connect(honk); honk.connect(makeup);
       makeup.connect(musicFx); musicFx.connect(master);
