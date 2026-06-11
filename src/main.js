@@ -5,7 +5,7 @@
 
 // which track plays on which screen (null/absent = silence)
 const MUSIC_BY_SCREEN = {
-  TITLE: 'title', OPERATOR: 'title', WORKSHOP: 'title', ACH: 'title',   // title theme covers the menu cluster
+  TITLE: 'title', OPERATOR: 'title', WORKSHOP: 'title', ACH: 'title', SETTINGS: 'title',   // title theme covers the menu cluster
   PLAYING: 'gameplay',                        // resumes across level-up detours (see audio.js)
   LEVELUP: 'levelup', SHIFT_DONE: 'shop', SHOP: 'shop', SPIDER: 'spider', BOSS: 'boss', FIRED: 'fired',
   VICTORY: 'victory',                         // the win song plays once, then hands off (see audio.js)
@@ -66,6 +66,7 @@ const HINTS = {
   LEVELUP:  '1-9 pick · R reroll · B banish · S skip (+2◆)',
   WORKSHOP: '1-9/0 buy a perk · A achievements · ESC back',
   OPERATOR: '1-5 pick an operator · SPACE last crew · H heat · ESC back',
+  SETTINGS: 'drag the sliders · ESC back',
   ACH:      'ESC back',
   SHIFT_DONE: 'SPACE shop',
   FIRED:    'SPACE clock in again · W workshop',

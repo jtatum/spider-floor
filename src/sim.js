@@ -39,16 +39,13 @@ function toggleMute() {
   }
 }
 
-// ── pause-modal settings: stepped volumes, shake toggle, abandon ──
-const VOL_STEPS = [0, 0.25, 0.5, 0.75, 1];
-function cycleVol(key) {
-  const v = save[key] ?? 1;
-  let i = VOL_STEPS.findIndex(s => Math.abs(s - v) < 0.01);
-  if (i < 0) i = VOL_STEPS.length - 1;
-  save[key] = VOL_STEPS[(i + 1) % VOL_STEPS.length];
+// ── settings: slider volumes, shake toggle, abandon ──
+function setVol(key, v) {
+  v = Math.max(0, Math.min(1, v));
+  if (v < 0.03) v = 0;                 // the bottom of the track means OFF, cleanly
+  save[key] = Math.round(v * 100) / 100;
   sfx.setVolumes(save.musicVol ?? 1, save.sfxVol ?? 1);
   persist();
-  sfx.buy();
 }
 function toggleShake() {
   save.shake = save.shake === false;   // false → true, anything else → false
@@ -93,6 +90,11 @@ function handleKey(k) {
     if (k === ' ' || k === 'enter') { openOperatorSelect(); }
     if (k === 'w') { menu = 'WORKSHOP'; }
     if (k === 'a') { menu = 'ACH'; }
+    if (k === 's') { menu = 'SETTINGS'; }
+    return;
+  }
+  if (st === 'SETTINGS') {
+    if (k === 'enter' || k === 'escape' || k === 's') { menu = null; return; }
     return;
   }
   if (st === 'OPERATOR') {
@@ -171,17 +173,41 @@ function jam() {
   sfx.buzz();
 }
 
-// ── mouse (title / shop / done buttons) ──
+// ── mouse / touch (title / shop / done buttons, settings sliders) ──
 const buttons = [];   // {x,y,w,h,fn} rebuilt each render for clickable screens
+const sliders = [];   // {x,y,w,h,tx,tw,set} rebuilt each render (settings panel)
+function canvasPos(ev) {
+  const r = canvas.getBoundingClientRect();
+  return { mx: (ev.clientX - r.left) * (W / r.width), my: (ev.clientY - r.top) * (H / r.height) };
+}
 canvas.addEventListener('click', ev => {
   sfx.resume();
-  const r = canvas.getBoundingClientRect();
-  const mx = (ev.clientX - r.left) * (W / r.width);
-  const my = (ev.clientY - r.top) * (H / r.height);
+  const { mx, my } = canvasPos(ev);
   for (const b of buttons) {
     if (mx >= b.x && mx <= b.x + b.w && my >= b.y && my <= b.y + b.h) { b.fn(); return; }
   }
 });
+// sliders are draggable: grab anywhere on the track, value follows the pointer
+let activeSlider = null;
+canvas.addEventListener('pointerdown', ev => {
+  const { mx, my } = canvasPos(ev);
+  for (const s of sliders) {
+    if (mx >= s.x && mx <= s.x + s.w && my >= s.y && my <= s.y + s.h) {
+      activeSlider = s;
+      try { canvas.setPointerCapture(ev.pointerId); } catch (e) {}
+      s.set((mx - s.tx) / s.tw);
+      ev.preventDefault();
+      return;
+    }
+  }
+});
+canvas.addEventListener('pointermove', ev => {
+  if (!activeSlider) return;
+  activeSlider.set((canvasPos(ev).mx - activeSlider.tx) / activeSlider.tw);
+});
+const releaseSlider = () => { activeSlider = null; };
+canvas.addEventListener('pointerup', releaseSlider);
+canvas.addEventListener('pointercancel', releaseSlider);
 
 // ────────────────────────────────────────────────────────────── helpers
 

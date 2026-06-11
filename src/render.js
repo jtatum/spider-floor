@@ -13,6 +13,7 @@ function worldToScreen(wy) { return CENTER_Y - (wy - game.elev.y); }
 
 function render() {
   buttons.length = 0;
+  sliders.length = 0;
   const sh = save.shake === false ? 0 : (game && game.shake) || 0;   // settings: shake off
   const sx = (Math.random() - 0.5) * sh;
   const sy = (Math.random() - 0.5) * sh;
@@ -26,6 +27,7 @@ function render() {
   if (st === 'WORKSHOP')   drawWorkshop();
   else if (st === 'ACH')   drawAchievements();
   else if (st === 'OPERATOR') drawOperatorSelect();
+  else if (st === 'SETTINGS') drawSettingsMenu();
   else if (st === 'TITLE') drawTitle();
   else if (st === 'SHOP')  drawShop();
   else if (st === 'SPIDER') drawSpider();
@@ -87,35 +89,70 @@ function drawToasts() {
   }
 }
 
-// the pause modal doubles as the settings screen — every option is a button,
-// so it's the touch-reachable home for pause / volumes / shake / abandon
+// a draggable slider: grab anywhere on the track. Registered into `sliders`
+// each frame, the pointer handlers in sim.js do the rest.
+function drawSlider(label, x, y, w, value, set) {
+  const v = Math.max(0, Math.min(1, value ?? 1));
+  ctx.fillStyle = '#bfa45f'; ctx.font = 'bold 13px ui-monospace';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(label, x, y + 10);
+  const tx = x + 118, tw = w - 118 - 56;
+  ctx.fillStyle = '#2a2218'; ctx.fillRect(tx, y + 6, tw, 8);
+  ctx.fillStyle = '#caa33a'; ctx.fillRect(tx, y + 6, tw * v, 8);
+  ctx.strokeStyle = '#7a6a4a'; ctx.lineWidth = 1; ctx.strokeRect(tx + 0.5, y + 5.5, tw, 9);
+  ctx.fillStyle = '#ffd44a'; ctx.fillRect(tx + tw * v - 3, y - 1, 6, 22);   // the knob
+  ctx.fillStyle = '#9a8a64'; ctx.font = '12px ui-monospace'; ctx.textAlign = 'right';
+  ctx.fillText(v === 0 ? 'OFF' : `${Math.round(v * 100)}%`, x + w, y + 10);
+  // a generous grab zone for thumbs
+  sliders.push({ x: tx - 10, y: y - 10, w: tw + 20, h: 40, tx, tw, set });
+}
+
+// the settings rows, shared by the in-run pause modal and the title screen
+function drawSettingsRows(inRun) {
+  const bw = 360, bx = W / 2 - bw / 2, bh = 42, gap = 12;
+  let by = 212;
+  drawButton(inRun ? '▸  RESUME' : '◂  BACK', bx, by, bw, bh,
+             () => { if (inRun) setPaused(false); else menu = null; }, true);
+  by += bh + gap + 6;
+  drawSlider('MUSIC', bx + 6, by, bw - 12, save.musicVol ?? 1, f => setVol('musicVol', f));
+  by += 44;
+  drawSlider('SOUND FX', bx + 6, by, bw - 12, save.sfxVol ?? 1, f => setVol('sfxVol', f));
+  by += 50;
+  drawButton(`SCREEN SHAKE  ${save.shake === false ? 'OFF' : 'ON'}`, bx, by, bw, bh, toggleShake, false);
+  by += bh + gap;
+  if (inRun) {
+    by += 8;
+    // abandon wants a deliberate second tap — and reads like it
+    if (abandonArm) {
+      ctx.fillStyle = '#e0584a'; ctx.font = 'bold 12px ui-monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('the run ends here — sure?', W / 2, by - 6);
+    }
+    drawButton(abandonArm ? '✕  TAP AGAIN TO ABANDON' : '✕  ABANDON RUN', bx, by, bw, bh, abandonRun, false);
+    by += bh + gap;
+  }
+  ctx.fillStyle = '#7a6a4a'; ctx.font = '13px ui-monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(inRun ? 'P or ESC to resume  ·  M mute' : 'ESC back  ·  M mute', W / 2, by + 14);
+}
+
+// in-run: the pause modal over the frozen game
 function drawPaused() {
   ctx.fillStyle = 'rgba(8,6,4,0.78)';
   ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#bfa45f'; ctx.font = 'bold 40px ui-monospace';
   ctx.fillText('PAUSED', W / 2, 156);
+  drawSettingsRows(true);
+}
 
-  const pct = (v) => (v ?? 1) === 0 ? 'OFF' : `${Math.round((v ?? 1) * 100)}%`;
-  const bw = 320, bx = W / 2 - bw / 2, bh = 42, gap = 12;
-  let by = 212;
-  const row = (label, fn, primary) => { drawButton(label, bx, by, bw, bh, fn, primary); by += bh + gap; };
-  row('▸  RESUME', () => setPaused(false), true);
-  row(`MUSIC  ${pct(save.musicVol)}`, () => cycleVol('musicVol'), false);
-  row(`SOUND FX  ${pct(save.sfxVol)}`, () => cycleVol('sfxVol'), false);
-  row(`SCREEN SHAKE  ${save.shake === false ? 'OFF' : 'ON'}`, toggleShake, false);
-  by += 8;
-  // abandon wants a deliberate second tap — and reads like it
-  if (abandonArm) {
-    ctx.fillStyle = '#e0584a'; ctx.font = 'bold 12px ui-monospace';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('the run ends here — sure?', W / 2, by - 6);
-  }
-  row(abandonArm ? '✕  TAP AGAIN TO ABANDON' : '✕  ABANDON RUN', abandonRun, false);
-
-  ctx.fillStyle = '#7a6a4a'; ctx.font = '13px ui-monospace';
+// from the title: same panel, no run to resume or abandon
+function drawSettingsMenu() {
+  ctx.fillStyle = '#0b0a0d'; ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('P or ESC to resume  ·  M mute', W / 2, by + 14);
+  ctx.fillStyle = '#bfa45f'; ctx.font = 'bold 40px ui-monospace';
+  ctx.fillText('SETTINGS', W / 2, 156);
+  drawSettingsRows(false);
 }
 
 // a small on-screen pause chip so touch can reach the modal at all
@@ -957,8 +994,9 @@ function drawTitle() {
   const got = ACHIEVEMENTS.filter(a => save.ach[a.key]).length;
   drawButton(`ACHIEVEMENTS ${got}/${ACHIEVEMENTS.length}`, W / 2 + 118, H - 128, 184, 46,
              () => { menu = 'ACH'; }, false);
+  drawButton('⚙', W / 2 + 310, H - 128, 46, 46, () => { menu = 'SETTINGS'; }, false);
   ctx.fillStyle = '#7a6a4a'; ctx.font = '11px ui-monospace'; ctx.textAlign = 'center';
-  ctx.fillText(`SPACE clock in    ·    W workshop    ·    A achievements    ·    M sound ${save.muted ? 'OFF' : 'on'}`, W / 2, H - 64);
+  ctx.fillText(`SPACE clock in    ·    W workshop    ·    A achievements    ·    S settings    ·    M sound ${save.muted ? 'OFF' : 'on'}`, W / 2, H - 64);
 }
 
 function drawButton(label, x, y, w, h, fn, primary) {
@@ -1577,44 +1615,43 @@ function drawShop() {
              W / 2 - 170, H - 72, 340, 44, () => startShift(), true);
 }
 
-// the run's build at a glance — owned parts as chips, open slots as hollow boxes
+// one rack of the build — owned parts as chips, open slots as hollow boxes.
+// Used side by side in the shop and at the screen edges during a level-up.
+function drawBuildColumn(kind, x, y, colW, nameFont = 'bold 13px ui-monospace') {
+  const cap = kind === 'habit' ? habitSlotCap() : fittingSlotCap();
+  ctx.fillStyle = '#6a6a4a'; ctx.font = '11px ui-monospace';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  ctx.fillText(`${kind === 'habit' ? 'HABITS' : 'FITTINGS'}  ${slotsUsed(kind)}/${cap}`, x, y - 4);
+  const owned = UPGRADES.filter(u => u.kind === kind && run.up[u.key] > 0);
+  let cy = y + 2;
+  for (let i = 0; i < cap; i++) {
+    const u = owned[i];
+    if (u) {
+      const tag = UP_TAGS[u.tag] || { color: '#bfa45f' };
+      ctx.fillStyle = '#1a130d'; ctx.fillRect(x, cy, colW, 26);
+      ctx.fillStyle = tag.color; ctx.fillRect(x, cy, 4, 26);
+      ctx.strokeStyle = '#3a2e22'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, cy + 0.5, colW - 1, 25);
+      ctx.fillStyle = '#bfa45f'; ctx.font = nameFont;
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText(u.name, x + 10, cy + 13);
+      for (let l = 0; l < u.max; l++) {
+        ctx.fillStyle = l < run.up[u.key] ? '#7aaa55' : '#3a2e22';
+        ctx.fillRect(x + colW - 10 - (u.max - l) * 11, cy + 10, 8, 6);
+      }
+    } else {
+      ctx.strokeStyle = '#2a2218'; ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, cy + 0.5, colW - 1, 25);
+      ctx.fillStyle = '#4a3e2c'; ctx.font = 'italic 11px ui-monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('open slot', x + colW / 2, cy + 13);
+    }
+    cy += 31;
+  }
+}
 function drawBuildPanel(x0, y, totalW) {
   const colW = (totalW - 20) / 2;
-  const groups = [
-    { title: `FITTINGS  ${slotsUsed('fitting')}/${fittingSlotCap()}`, kind: 'fitting', x: x0 },
-    { title: `HABITS  ${slotsUsed('habit')}/${habitSlotCap()}`,       kind: 'habit',   x: x0 + colW + 20 },
-  ];
-  for (const g of groups) {
-    ctx.fillStyle = '#6a6a4a'; ctx.font = '11px ui-monospace';
-    ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-    ctx.fillText(g.title, g.x, y - 4);
-    const owned = UPGRADES.filter(u => u.kind === g.kind && run.up[u.key] > 0);
-    const cap = g.kind === 'habit' ? habitSlotCap() : fittingSlotCap();
-    let cy = y + 2;
-    for (let i = 0; i < cap; i++) {
-      const u = owned[i];
-      if (u) {
-        const tag = UP_TAGS[u.tag] || { color: '#bfa45f' };
-        ctx.fillStyle = '#1a130d'; ctx.fillRect(g.x, cy, colW, 26);
-        ctx.fillStyle = tag.color; ctx.fillRect(g.x, cy, 4, 26);
-        ctx.strokeStyle = '#3a2e22'; ctx.lineWidth = 1; ctx.strokeRect(g.x + 0.5, cy + 0.5, colW - 1, 25);
-        ctx.fillStyle = '#bfa45f'; ctx.font = 'bold 13px ui-monospace';
-        ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-        ctx.fillText(u.name, g.x + 12, cy + 13);
-        for (let l = 0; l < u.max; l++) {
-          ctx.fillStyle = l < run.up[u.key] ? '#7aaa55' : '#3a2e22';
-          ctx.fillRect(g.x + colW - 12 - (u.max - l) * 12, cy + 10, 8, 6);
-        }
-      } else {
-        ctx.strokeStyle = '#2a2218'; ctx.lineWidth = 1;
-        ctx.strokeRect(g.x + 0.5, cy + 0.5, colW - 1, 25);
-        ctx.fillStyle = '#4a3e2c'; ctx.font = 'italic 11px ui-monospace';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('open slot', g.x + colW / 2, cy + 13);
-      }
-      cy += 31;
-    }
-  }
+  drawBuildColumn('fitting', x0, y, colW);
+  drawBuildColumn('habit', x0 + colW + 20, y, colW);
 }
 
 // ── mid-shift level-up: the game holds its breath while you pick 1 of 3 ──
@@ -1632,7 +1669,11 @@ function drawLevelUp() {
     ctx.fillText('✕ BANISH: pick a part you never want offered again this run', W / 2, 114);
   }
 
-  const cardW = 520, cardH = 78, gapY = 12;
+  // your racks flank the choices — you can see what you own while deepening it
+  drawBuildColumn('fitting', 16, 148, 192, 'bold 12px ui-monospace');
+  drawBuildColumn('habit', W - 16 - 192, 148, 192, 'bold 12px ui-monospace');
+
+  const cardW = 460, cardH = 78, gapY = 12;
   const x0 = (W - cardW) / 2, y0 = 148;
   lv.choices.forEach((u, i) => {
     const cy = y0 + i * (cardH + gapY);

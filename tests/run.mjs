@@ -554,17 +554,19 @@ test('banish strikes a part from the run and refills the choices', (G) => {
   assert.ok(!G.run.banished.includes(other.key), 'a second banish is refused');
 });
 
-test('settings persist: volumes step, shake toggles, all saved to disk', (G) => {
-  G.cycleVol('musicVol');                       // 100% → OFF
-  assert.equal(G.save.musicVol, 0, 'volume steps wrap from 100% to OFF');
-  G.cycleVol('musicVol');
-  assert.equal(G.save.musicVol, 0.25, 'then climbs in quarters');
-  G.cycleVol('sfxVol');
-  assert.equal(G.save.sfxVol, 0, 'sfx steps independently');
+test('settings persist: slider volumes clamp, shake toggles, all saved to disk', (G) => {
+  G.setVol('musicVol', 0.6);
+  assert.equal(G.save.musicVol, 0.6, 'slider value lands');
+  G.setVol('musicVol', 1.7);
+  assert.equal(G.save.musicVol, 1, 'clamped at full');
+  G.setVol('sfxVol', 0.01);
+  assert.equal(G.save.sfxVol, 0, 'the bottom of the track means OFF');
+  G.setVol('musicVol', 0.337);
+  assert.equal(G.save.musicVol, 0.34, 'rounded to clean steps');
   G.toggleShake();
   assert.equal(G.save.shake, false, 'shake off');
   const reloaded = G.loadSave();
-  assert.equal(reloaded.musicVol, 0.25, 'music volume persisted');
+  assert.equal(reloaded.musicVol, 0.34, 'music volume persisted');
   assert.equal(reloaded.sfxVol, 0, 'sfx volume persisted');
   assert.equal(reloaded.shake, false, 'shake persisted');
 });
