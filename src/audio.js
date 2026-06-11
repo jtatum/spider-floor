@@ -55,7 +55,7 @@ const sfx = (() => {
     gameplay: { base: 'audio/gameplay', loopStart: 10.719, loopEnd: 127.492, gain: 0.42, resume: true },
     levelup:  { base: 'audio/levelup',  loopStart: 12.350, loopEnd: 60.390,  gain: 0.5 },
     shop:     { base: 'audio/shop',     loopStart: 20.299, loopEnd: 87.609,  gain: 0.5 },
-    fired:    { base: 'audio/fired',    loopStart: 32.924, loopEnd: 90.831,  gain: 0.5 },
+    fired:    { base: 'audio/fired',    loopStart: 32.804, loopEnd: 90.831,  gain: 0.5 },
   };
   let musicGain = null, musicSrc = null, musicCur = null, musicReq = null;
   // for resume-capable tracks (gameplay): remember where we left off so a brief
