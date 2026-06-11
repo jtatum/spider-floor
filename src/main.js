@@ -7,7 +7,7 @@
 const MUSIC_BY_SCREEN = {
   TITLE: 'title', OPERATOR: 'title', WORKSHOP: 'title', ACH: 'title', SETTINGS: 'title',   // title theme covers the menu cluster
   PLAYING: 'gameplay',                        // resumes across level-up detours (see audio.js)
-  LEVELUP: 'levelup', SHIFT_DONE: 'shop', SHOP: 'shop', SPIDER: 'spider', BOSS: 'boss', FIRED: 'fired',
+  LEVELUP: 'levelup', SHIFT_DONE: 'shop', SHOP: 'shop', SPIDER: 'spider', MAZE: 'spider', BOSS: 'boss', FIRED: 'fired',
   VICTORY: 'victory',                         // the win song plays once, then hands off (see audio.js)
 };
 
@@ -48,7 +48,7 @@ else window.addEventListener('load', () => sfx.prefetchAll(), { once: true });
 
 // tab away mid-shift → the building waits for you
 window.addEventListener('blur', () => {
-  if (!menu && game && (game.state === 'PLAYING' || game.state === 'SPIDER' || game.state === 'BOSS')) {
+  if (!menu && game && (game.state === 'PLAYING' || game.state === 'SPIDER' || game.state === 'BOSS' || game.state === 'MAZE')) {
     setPaused(true);
   }
 });
@@ -61,6 +61,7 @@ const HINTS = {
   TITLE:    'SPACE clock in · W workshop · A achievements · M sound',
   PLAYING:  '↑/↓ crank · SPACE doors · P pause · hold R abandon run',
   SPIDER:   '←/→ move · SPACE swing · ↑ at the door to bail out',
+  MAZE:     'WASD/arrows move · find the other lift door · P pause',
   BOSS:     '↑/↓ crank · ram it when it drops · dodge the red',
   SHOP:     'F fuse · Z/X specials · R restock · ENTER start',
   LEVELUP:  '1-9 pick · R reroll · B banish · S skip (+2◆)',

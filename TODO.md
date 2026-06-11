@@ -38,7 +38,8 @@ Key decisions (agreed direction):
 - Exit door uses the same green glow + arrow language as the main game.
 
 Build plan (~3 sessions, each shippable; the ledge stays until the maze lands whole):
-- [ ] Session 1: maze gen + connectivity tests, iso renderer, camera, 2D movement
+- [x] Session 1: maze gen + connectivity tests, iso renderer, camera, 2D movement
+      (src/maze.js — dev preview: press X on the title screen)
 - [ ] Session 2: flow-field swarm, sword combat, cocoons/loot, exit + banking
 - [ ] Session 3: spitters, visit escalation (visit 3 = the open ceiling + THE
       THREAD → unlocks the roof), mobile virtual joystick (shared with mobile todo),

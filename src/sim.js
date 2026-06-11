@@ -66,7 +66,7 @@ function handleKey(k) {
   const st = menu || (game ? game.state : 'TITLE');
 
   if (k === 'm') { toggleMute(); return; }     // mute works everywhere
-  const pausable = !menu && (st === 'PLAYING' || st === 'SPIDER' || st === 'BOSS');
+  const pausable = !menu && (st === 'PLAYING' || st === 'SPIDER' || st === 'BOSS' || st === 'MAZE');
   if (paused) {                                 // frozen: only resume gets through
     if (k === 'p' || k === 'escape') setPaused(false);
     return;
@@ -91,6 +91,10 @@ function handleKey(k) {
     if (k === 'w') { menu = 'WORKSHOP'; }
     if (k === 'a') { menu = 'ACH'; }
     if (k === 's') { menu = 'SETTINGS'; }
+    // DEV PREVIEW (Spider Floor v2, session 1): walk the webbed office. The old
+    // ledge stays the live spider floor until the maze lands whole; this door
+    // comes out when sessions 2-3 (swarm, loot, escalation) replace it.
+    if (k === 'x') { run = newRun(save.lastOperator || 'sal'); startShift(); enterMaze(); }
     return;
   }
   if (st === 'SETTINGS') {
@@ -328,6 +332,7 @@ function update(dt) {
   if (game) updateFx(dt);   // particles / floating text decay in every state
 
   if (game && game.state === 'SPIDER') { updateSpider(dt); return; }
+  if (game && game.state === 'MAZE') { updateMaze(dt); return; }
   if (game && game.state === 'BOSS') { updateBoss(dt); return; }
   if (!game || game.state !== 'PLAYING') return;
   game.t += dt;

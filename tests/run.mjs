@@ -379,6 +379,83 @@ test('a boss win records the heat and pays the ladder achievements', (G) => {
   assert.equal(G.maxHeatUnlocked(), 2, 'the next rung is open');
 });
 
+// ── the webbed office (Spider Floor v2, session 1) ───────────────────────────
+
+test('maze: every floor tile is reachable; the exit is the farthest door', (G) => {
+  for (let i = 0; i < 25; i++) {
+    const m = G.genMaze(21, 21);
+    assert.equal(m.cols % 2, 1); assert.equal(m.rows % 2, 1);
+    assert.equal(m.grid[m.entry.y][m.entry.x], 0, 'entry is floor');
+    assert.equal(m.grid[m.exit.y][m.exit.x], 0, 'exit is floor');
+    const dist = G.bfsDistances(m.grid, m.entry.x, m.entry.y);
+    let floors = 0, unreachable = 0, maxD = 0;
+    for (let y = 0; y < m.rows; y++) for (let x = 0; x < m.cols; x++) {
+      if (m.grid[y][x] !== 0) continue;
+      floors++;
+      if (dist[y][x] < 0) unreachable++;
+      maxD = Math.max(maxD, dist[y][x]);
+    }
+    assert.equal(unreachable, 0, `maze #${i}: every floor tile reachable (${unreachable}/${floors} cut off)`);
+    assert.equal(dist[m.exit.y][m.exit.x], maxD, 'exit sits at the far end of the BFS');
+    assert.ok(maxD >= 20, `the walk to the exit is a real walk (${maxD} tiles)`);
+  }
+});
+
+test('maze: braiding leaves loops, not a dead-end tree', (G) => {
+  for (let i = 0; i < 10; i++) {
+    const m = G.genMaze(21, 21);
+    let nodes = 0, edges = 0;
+    for (let y = 0; y < m.rows; y++) for (let x = 0; x < m.cols; x++) {
+      if (m.grid[y][x] !== 0) continue;
+      nodes++;
+      if (x + 1 < m.cols && m.grid[y][x + 1] === 0) edges++;
+      if (y + 1 < m.rows && m.grid[y + 1][x] === 0) edges++;
+    }
+    // a perfect maze is a tree (edges = nodes - 1); braiding must add cycles
+    assert.ok(edges > nodes - 1, `maze #${i} has loops (${edges} edges, ${nodes} nodes)`);
+  }
+});
+
+test('maze movement: walls stop you; diagonals slide along them', (G) => {
+  const mz = { cols: 5, rows: 3, grid: [[1, 1, 1, 1, 1], [1, 0, 0, 0, 1], [1, 1, 1, 1, 1]] };
+  const p = { x: 1.5, y: 1.5 };
+  for (let i = 0; i < 200; i++) G.tryMove(mz, p, 0.05, 0);   // run at the east wall
+  assert.ok(p.x < 4 - 0.29 && p.x > 3.5, `stopped at the wall (x=${p.x.toFixed(2)})`);
+  assert.equal(p.y, 1.5, 'no vertical drift');
+  // diagonal into the corridor wall: the blocked axis clamps, the open one moves
+  const q = { x: 1.5, y: 1.5 };
+  for (let i = 0; i < 20; i++) G.tryMove(mz, q, 0.05, 0.05);
+  assert.ok(q.x > 2.0, 'slid along the wall');
+  assert.ok(q.y < 1.75, 'held by the wall');
+});
+
+test('maze: screen-relative movement maps to iso world directions', (G) => {
+  const up = G.screenDirToWorld(0, -1);
+  assert.ok(up.x < -0.6 && up.y < -0.6, 'screen-up walks into the far corner');
+  const right = G.screenDirToWorld(1, 0);
+  assert.ok(right.x > 0.6 && right.y < -0.6, 'screen-right crosses the grid diagonally');
+  assert.ok(Math.abs(Math.hypot(right.x, right.y) - 1) < 1e-6, 'normalized');
+});
+
+test('maze visit: the world freezes, and the far door walks you out', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.game.passengers = [];
+  G.spawnPassenger();
+  const rider = G.game.passengers.at(-1);
+  const patBefore = rider.patience;
+  G.enterMaze();
+  assert.equal(G.game.state, 'MAZE');
+  const mz = G.game.maze;
+  assert.equal(Math.floor(mz.player.x), mz.entry.x, 'you arrive at the entry');
+  G.step(60);                                       // a second in the office
+  assert.equal(rider.patience, patBefore, 'upstairs, nobody ages while you are below');
+  mz.player.x = mz.exit.x + 0.5; mz.player.y = mz.exit.y + 0.5;
+  G.step(2);
+  assert.equal(G.game.state, 'PLAYING', 'stepping into the other lift brings you home');
+  assert.equal(G.game.maze, null, 'the office is gone behind you');
+  assert.ok(G.doorsOpen(), 'the lift opens at the lobby');
+});
+
 // ── Spider Floor ─────────────────────────────────────────────────────────────
 
 // step off the lift onto the Spider Floor ledge

@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 // The game is split into ordered classic scripts that share one global scope;
 // concatenating them in load order reproduces the exact browser environment.
-const SRC_FILES = ['data.js', 'sim.js', 'render.js', 'audio.js', 'main.js'];
+const SRC_FILES = ['data.js', 'sim.js', 'maze.js', 'render.js', 'audio.js', 'main.js'];
 const SRC = SRC_FILES
   .map(f => fs.readFileSync(path.join(here, '..', 'src', f), 'utf8'))
   .join('\n');
@@ -38,6 +38,7 @@ const SHIM = `
   get menuHeat(){return menuHeat}, set menuHeat(v){menuHeat=v}, musicPosOf, musicResolve,
   nearestFloorIdx, isAligned, doorsOpen, ridersAboard, slotsAboard, capacityNow, enterSpider, spawnWebSpider,
   enterBoss, updateBoss, exitBoss, BOSS,
+  genMaze, bfsDistances, tryMove, screenDirToWorld, enterMaze, exitMaze, updateMaze, mazeWalkable,
 };
 `;
 

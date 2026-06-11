@@ -31,6 +31,7 @@ function render() {
   else if (st === 'TITLE') drawTitle();
   else if (st === 'SHOP')  drawShop();
   else if (st === 'SPIDER') drawSpider();
+  else if (st === 'MAZE') drawMaze();
   else if (st === 'BOSS') drawBoss();
   else if (st === 'VICTORY') drawVictory();
   else {
@@ -54,7 +55,7 @@ function render() {
     if (st === 'FIRED') drawFired();
   }
 
-  if (paused && (st === 'PLAYING' || st === 'SPIDER' || st === 'BOSS')) drawPaused();
+  if (paused && (st === 'PLAYING' || st === 'SPIDER' || st === 'BOSS' || st === 'MAZE')) drawPaused();
 
   drawToasts();
 

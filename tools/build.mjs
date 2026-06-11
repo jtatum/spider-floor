@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
-const SRC_FILES = ['data.js', 'sim.js', 'render.js', 'audio.js', 'main.js'];
+const SRC_FILES = ['data.js', 'sim.js', 'maze.js', 'render.js', 'audio.js', 'main.js'];
 const hash = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 10);
 
 fs.rmSync(dist, { recursive: true, force: true });
