@@ -253,7 +253,10 @@ function floatText(text, color) {
 }
 function updateFx(dt) {
   if (game.particles) {
-    for (const p of game.particles) { p.life += dt; p.vy += 250 * dt; p.x += p.vx * dt; p.y += p.vy * dt; }
+    for (const p of game.particles) {
+      p.life += dt; p.vy += 250 * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+      if (p.vr) p.rot = (p.rot || 0) + p.vr * dt;
+    }
     game.particles = game.particles.filter(p => p.life < p.max);
   }
   if (game.floaters) {
@@ -600,6 +603,22 @@ function openLevelUp() {
   game.state = 'LEVELUP';
   sfx.power();
 }
+// each upgrade family celebrates a pick in its own dialect
+const TAG_EMOJI = {
+  move:  ['🚀', '⚡'], door: ['🚪', '✨'], info: ['🧠', '💡'], cargo: ['💰', '📦'],
+  calm:  ['☕', '🎶'], luck: ['🍀', '✨'], guard: ['🛡️', '🔧'],
+};
+function emojiBurst(chars, n = 10) {
+  const c = cabinScreen();
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 2 + (Math.random() - 0.5) * 1.7;
+    const sp = 130 + Math.random() * 190;
+    game.particles.push({ x: c.x, y: c.y - 24, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      life: 0, max: 1.1 + Math.random() * 0.5, size: 15 + Math.random() * 10,
+      rot: 0, vr: (Math.random() - 0.5) * 8, emoji: chars[i % chars.length] });
+  }
+}
+
 function pickLevel(u) {
   run.up[u.key]++;
   if (run.up[u.key] >= u.max) {
@@ -614,6 +633,7 @@ function pickLevel(u) {
   const tag = UP_TAGS[u.tag] || { color: '#bfa45f' };
   game.banner = { text: run.up[u.key] > 1 ? `${u.name}  Lv${run.up[u.key]}` : `${u.name} INSTALLED`,
                   t: 1.5, color: tag.color };
+  emojiBurst(TAG_EMOJI[u.tag] || ['✨', '⭐']);   // the cabin celebrates in kind
   sfx.buy();
 }
 function skipLevel() {

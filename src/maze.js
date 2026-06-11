@@ -210,7 +210,7 @@ function spawnMazeSpider(mz) {
   mz.spiders.push({
     x: tile.x + 0.5, y: tile.y + 0.5,
     drop: 0.55,                          // it rappels out of the ceiling dark
-    speed: Math.min(3.0, (1.5 + mz.t * 0.02 + run.shiftNum * 0.05) * mazeHeat()),
+    speed: Math.min(3.3, (1.75 + mz.t * 0.03 + run.shiftNum * 0.05) * mazeHeat()),
     sway: Math.random() * 6, size: 10 + Math.random() * 4,
     dead: false, deadT: 0,
   });
@@ -289,8 +289,8 @@ function updateMaze(dt) {
   mz.spawnTimer -= dt;
   if (mz.spawnTimer <= 0) {
     spawnMazeSpider(mz);
-    if (mz.t > 30 && Math.random() < 0.5) spawnMazeSpider(mz);
-    const rate = Math.max(0.55, mz.spawnEvery - mz.t * 0.022);
+    if (mz.t > 22 && Math.random() < 0.5) spawnMazeSpider(mz);
+    const rate = Math.max(0.5, mz.spawnEvery - mz.t * 0.03);
     mz.spawnTimer = rate * (0.75 + Math.random() * 0.5);
   }
 

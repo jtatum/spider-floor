@@ -56,6 +56,9 @@ function render() {
 
   if (paused && (st === 'PLAYING' || st === 'BOSS' || st === 'MAZE')) drawPaused();
 
+  // the party doesn't follow you out of the party screens
+  if (st !== 'LEVELUP' && st !== 'SHIFT_DONE' && st !== 'SHOP') cel.screen = null;
+
   drawToasts();
 
   if (screenFade > 0) {           // fade-in-from-black on screen changes
@@ -87,6 +90,139 @@ function drawToasts() {
     ctx.restore();
     ty += 52;
   }
+}
+
+// ── celebration fx: confetti, fireworks, bouncing emoji, gold motes ──
+// Pure dopamine, drawn BEHIND each screen's content. The host screen calls
+// celebrate('NAME') at the top of its draw; render() clears the rig whenever
+// the player is anywhere else. Display-only — never touched by the sim.
+const CEL_COLORS = ['#ffd44a', '#7adf9a', '#6ab8ff', '#ff7a9a', '#d88aff', '#ffaa5a'];
+const CEL_EMOJI = ['🎉', '⭐', '💰', '🛗', '💎', '🍀'];
+const cel = { screen: null, last: 0, spawn: 0, t: 0, parts: [] };
+
+function celebrate(screen) {
+  const now = performance.now();
+  let dt = Math.min(0.05, (now - cel.last) / 1000);
+  cel.last = now;
+  if (cel.screen !== screen) {                 // fresh screen, fresh party
+    cel.screen = screen; cel.parts = []; cel.spawn = 0; cel.t = 0; dt = 0;
+    if (screen === 'SHIFT_DONE') celRocket(true);   // the opening salvo
+  }
+  cel.t += dt;
+  cel.spawn -= dt;
+  if (cel.parts.length < 320) {
+    if (screen === 'LEVELUP' && cel.spawn <= 0) { celConfetti(); cel.spawn = 0.05; }
+    if (screen === 'SHIFT_DONE') {
+      if (cel.spawn <= 0) { celRocket(); cel.spawn = 0.55 + Math.random() * 0.85; }
+      if (Math.random() < dt * 1.6) celEmojiDrop();
+    }
+    if (screen === 'SHOP' && cel.spawn <= 0) { celMote(); cel.spawn = 0.13; }
+  }
+
+  // physics + draw, one pass
+  for (const p of cel.parts) {
+    p.life += dt;
+    if (p.kind === 'confetti') {
+      p.x += (p.vx + Math.sin(p.life * p.flut + p.phase) * 34) * dt;
+      p.y += p.vy * dt;
+      p.rot += p.vr * dt;
+      if (p.y > H + 12) p.dead = true;
+    } else if (p.kind === 'rocket') {
+      p.y += p.vy * dt;
+      if (Math.random() < 0.6) cel.parts.push({ kind: 'spark', x: p.x, y: p.y, vx: (Math.random() - 0.5) * 20,
+        vy: 40, life: 0, max: 0.35, size: 1.5, color: '#d8b24a' });
+      if (p.y <= p.targetY) { p.dead = true; celBurst(p.x, p.y); }
+    } else if (p.kind === 'spark') {
+      p.vy += 150 * dt;
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      if (p.life > p.max) p.dead = true;
+    } else if (p.kind === 'emoji') {
+      p.vy += 460 * dt;
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      p.rot += p.vr * dt;
+      if (p.y > H - 26 && p.vy > 0) {           // the floor — with bounce
+        p.y = H - 26;
+        p.vy = -p.vy * 0.55;
+        p.vx *= 0.8; p.vr *= 0.7;
+        if (Math.abs(p.vy) < 40) p.vy = 0;      // settled; fades out below
+      }
+      if (p.life > 5.5) p.dead = true;
+    } else if (p.kind === 'mote') {
+      p.y -= p.vy * dt;
+      p.x += Math.sin(p.life * 1.4 + p.phase) * 12 * dt;
+      if (p.y < -10) p.dead = true;
+    }
+    // draw
+    if (p.dead) continue;
+    if (p.kind === 'confetti') {
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      ctx.globalAlpha = 0.8;
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * (0.4 + 0.6 * Math.abs(Math.sin(p.life * 5 + p.phase))));
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    } else if (p.kind === 'rocket') {
+      ctx.fillStyle = '#ffe6a0';
+      ctx.fillRect(p.x - 1.5, p.y - 4, 3, 8);
+    } else if (p.kind === 'spark') {
+      ctx.globalAlpha = Math.max(0, 1 - p.life / p.max);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
+      ctx.globalAlpha = 1;
+    } else if (p.kind === 'emoji') {
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      ctx.globalAlpha = p.life > 4.5 ? Math.max(0, 1 - (p.life - 4.5)) : 1;
+      ctx.font = `${p.size}px serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(p.char, 0, 0);
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    } else if (p.kind === 'mote') {
+      ctx.globalAlpha = 0.25 + 0.35 * Math.abs(Math.sin(p.life * 2 + p.phase));
+      ctx.fillStyle = '#d4a050';
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(Math.PI / 4);
+      ctx.fillRect(-p.size, -p.size, p.size * 2, p.size * 2);
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+  }
+  cel.parts = cel.parts.filter(p => !p.dead);
+}
+function celConfetti() {
+  cel.parts.push({ kind: 'confetti', x: Math.random() * W, y: -10,
+    vx: (Math.random() - 0.5) * 30, vy: 60 + Math.random() * 70,
+    rot: Math.random() * 7, vr: (Math.random() - 0.5) * 7,
+    w: 5 + Math.random() * 4, h: 7 + Math.random() * 5,
+    flut: 2 + Math.random() * 3, phase: Math.random() * 7,
+    color: CEL_COLORS[Math.floor(Math.random() * CEL_COLORS.length)], life: 0 });
+}
+function celRocket(opening) {
+  cel.parts.push({ kind: 'rocket', x: 70 + Math.random() * (W - 140), y: H + 8,
+    vy: -(380 + Math.random() * 160),
+    targetY: (opening ? 140 : 110) + Math.random() * 200, life: 0 });
+}
+function celBurst(x, y) {
+  const color = CEL_COLORS[Math.floor(Math.random() * CEL_COLORS.length)];
+  const n = 26 + Math.floor(Math.random() * 16);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + Math.random() * 0.2;
+    const sp = 70 + Math.random() * 170;
+    cel.parts.push({ kind: 'spark', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      life: 0, max: 1.1 + Math.random() * 0.7, size: 1.5 + Math.random() * 1.3,
+      color: Math.random() < 0.25 ? '#fff2c8' : color });
+  }
+}
+function celEmojiDrop() {
+  cel.parts.push({ kind: 'emoji', x: 40 + Math.random() * (W - 80), y: -24,
+    vx: (Math.random() - 0.5) * 90, vy: 0,
+    rot: 0, vr: (Math.random() - 0.5) * 8,
+    char: CEL_EMOJI[Math.floor(Math.random() * CEL_EMOJI.length)],
+    size: 20 + Math.random() * 14, life: 0 });
+}
+function celMote() {
+  cel.parts.push({ kind: 'mote', x: Math.random() * W, y: H + 8,
+    vy: 18 + Math.random() * 26, size: 1.5 + Math.random() * 1.5,
+    phase: Math.random() * 7, life: 0 });
 }
 
 // a draggable slider: grab anywhere on the track. Registered into `sliders`
@@ -215,8 +351,16 @@ function drawDarkness() {
 function drawFx() {
   for (const p of game.particles) {
     ctx.globalAlpha = Math.max(0, 1 - p.life / p.max);
-    ctx.fillStyle = p.color;
-    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    if (p.emoji) {                       // a celebratory emoji, tumbling
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot || 0);
+      ctx.font = `${p.size}px serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(p.emoji, 0, 0);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    }
   }
   ctx.globalAlpha = 1;
   for (const f of game.floaters) {
@@ -1220,6 +1364,7 @@ function drawVictory() {
 // ── shift done overlay ──
 function drawShiftDone() {
   ctx.fillStyle = 'rgba(13,10,8,0.86)'; ctx.fillRect(0, 0, W, H);
+  celebrate('SHIFT_DONE');               // fireworks + emoji raining on the floor
   ctx.fillStyle = '#7aaa55'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = 'bold 40px ui-monospace';
   ctx.fillText(`SHIFT ${run.shiftNum} SURVIVED`, W / 2, H / 2 - 90);
@@ -1429,6 +1574,7 @@ function drawAchievements() {
 // ── shop: the between-shift layer — consumables, specials, and your build ──
 function drawShop() {
   ctx.fillStyle = '#0d0a08'; ctx.fillRect(0, 0, W, H);
+  celebrate('SHOP');                     // calm gold motes — payday ambience
   ctx.fillStyle = '#bfa45f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = 'bold 32px ui-monospace';
   ctx.fillText('THE PARTS SHOP', W / 2, 46);
@@ -1524,6 +1670,7 @@ function drawLevelUp() {
   const lv = game.levelUp;
   if (!lv) return;
   ctx.fillStyle = 'rgba(8,6,4,0.80)'; ctx.fillRect(0, 0, W, H);
+  celebrate('LEVELUP');                  // confetti behind the choices
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 34px ui-monospace';
   ctx.fillText(`LEVEL ${run.level + 1}`, W / 2, 86);
