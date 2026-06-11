@@ -110,6 +110,25 @@ test('crank has momentum — releasing does not auto-stop', (G) => {
   assert.ok(vCoast > vRelease * 0.4, `should still be coasting (got ${Math.round(vCoast)} of ${Math.round(vRelease)})`);
 });
 
+test('arrows, WASD, and touch keys all crank — and never stomp each other', (G) => {
+  G.run = G.newRun(); G.startShift();
+  const e = G.game.elev; e.doorTarget = 0; e.doors = 0;
+  for (const key of ['arrowup', 'w', 't-up']) {
+    e.y = 0; e.v = 0;
+    G.keys.add(key); G.step(20); G.keys.delete(key);
+    assert.ok(e.v > 100, `${JSON.stringify(key)} cranks the car (v=${Math.round(e.v)})`);
+  }
+  // the old bug: touch cleanup deleted the SHARED 'arrowup', killing a held key.
+  // Touch now releases only its own synthetic name — the physical arrow survives.
+  e.y = 0; e.v = 0;
+  G.keys.add('arrowup');         // a physical arrow, held
+  G.keys.add('t-up');            // a touch button, also held
+  G.keys.delete('t-up');         // touch UI rebinds/releases — its key only
+  G.step(20);
+  assert.ok(e.v > 100, 'the held arrow key keeps cranking after touch lets go');
+  G.keys.delete('arrowup');
+});
+
 test('Auto Doors does not soft-lock on a rider that cannot fit', (G) => {
   G.run = G.newRun(); G.run.up.autoDoors = 1; G.startShift();
   G.game.passengers = [];

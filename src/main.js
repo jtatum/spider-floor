@@ -112,8 +112,15 @@ function setupTouch() {
     el.addEventListener('pointerup', release);
     el.addEventListener('pointercancel', release);
     el.addEventListener('pointerleave', release);
+    // iOS synthesizes a double-tap "smart zoom" from rapid taps unless the
+    // touch sequence is fully claimed — pointerdown preventDefault isn't enough
+    el.addEventListener('touchend', e => e.preventDefault());
   }
 }
+// Touch buttons feed SYNTHETIC key names ('t-up', not 'arrowup') into the same
+// `keys` set the keyboard uses. The sim checks both. This matters: bindings are
+// swapped/cleared on state changes and resizes, and when touch shared names
+// with the keyboard, that cleanup would silently kill a HELD physical arrow key.
 function updateTouchUI() {
   if (!touchEnabled) return;
   const st = menu || (game ? game.state : 'TITLE');
@@ -124,15 +131,19 @@ function updateTouchUI() {
     el.style.display = key ? 'flex' : 'none';
   };
   if (st === 'PLAYING') {
-    set(touchEls.L, 'arrowup', '▲', 'hold');
-    set(touchEls.R, 'arrowdown', '▼', 'hold');
+    set(touchEls.L, 't-up', '▲', 'hold');
+    set(touchEls.R, 't-down', '▼', 'hold');
     set(touchEls.A, ' ', 'DOORS', 'tap');
     set(touchEls.B, '', '');
   } else if (st === 'SPIDER') {
-    set(touchEls.L, 'arrowleft', '◀', 'hold');
-    set(touchEls.R, 'arrowright', '▶', 'hold');
-    set(touchEls.A, ' ', 'SWING', 'hold');
-    set(touchEls.B, 'arrowup', 'LIFT', 'hold');
+    set(touchEls.L, 't-left', '◀', 'hold');
+    set(touchEls.R, 't-right', '▶', 'hold');
+    set(touchEls.A, 't-act', 'SWING', 'hold');
+    set(touchEls.B, 't-up', 'LIFT', 'hold');
+  } else if (st === 'BOSS') {
+    set(touchEls.L, 't-up', '▲', 'hold');
+    set(touchEls.R, 't-down', '▼', 'hold');
+    set(touchEls.A, '', ''); set(touchEls.B, '', '');
   } else {            // menus/title/shop: tap the canvas directly
     set(touchEls.L, '', ''); set(touchEls.R, '', ''); set(touchEls.A, '', ''); set(touchEls.B, '', '');
   }

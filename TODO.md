@@ -4,8 +4,11 @@ The working list. Roughly ordered within each section; strike things as they lan
 
 ## Next up
 
-- [ ] **Mobile: boss-fight touch buttons** — `updateTouchUI` has no BOSS branch, so the
-      ending is unplayable on a phone. Needs ▲/▼ (crank) at minimum.
+- [x] **Mobile: boss-fight touch buttons** — BOSS now binds ▲/▼ in `updateTouchUI`.
+- [x] **Mobile: double-tap zoom on rapid button taps** — `touch-action: manipulation`
+      on html/body/canvas + touchend claimed on the buttons.
+- [x] **Arrows vs touch stomping** — touch buttons now feed synthetic `t-*` key names;
+      rebinding/resize cleanup can no longer kill a held physical arrow key.
 - [ ] **Settings/pause modal** — one modal for: resume · music volume · SFX volume
       (separate gain nodes already exist) · screen-shake toggle · abandon run (the
       touch answer to hold-R) · quit to title. Opened by P/ESC and a small ⏸ corner

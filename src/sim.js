@@ -14,6 +14,14 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
 
+// Every held direction has three dialects — arrows, WASD, and the synthetic
+// 't-*' names the touch buttons feed in. The sim only ever asks these.
+const heldUp     = () => keys.has('arrowup')    || keys.has('w') || keys.has('t-up');
+const heldDown   = () => keys.has('arrowdown')  || keys.has('s') || keys.has('t-down');
+const heldLeft   = () => keys.has('arrowleft')  || keys.has('a') || keys.has('t-left');
+const heldRight  = () => keys.has('arrowright') || keys.has('d') || keys.has('t-right');
+const heldAction = () => keys.has(' ')          || keys.has('t-act');
+
 let paused = false;
 
 function toggleMute() {
@@ -304,8 +312,8 @@ function update(dt) {
   const canMove = e.doors < 0.02 && e.doorTarget === 0;
   let input = 0;
   if (canMove) {
-    if (keys.has('arrowup') || keys.has('w')) input += 1;
-    if (keys.has('arrowdown') || keys.has('s')) input -= 1;
+    if (heldUp()) input += 1;
+    if (heldDown()) input -= 1;
   }
   if (!canMove) {
     // doors unlatched: the car seats itself on the landing instead of creeping
@@ -674,12 +682,12 @@ function updateSpider(dt) {
 
   // ── move ──
   let mx = 0;
-  if (keys.has('arrowleft') || keys.has('a')) { mx -= 1; P.facing = -1; }
-  if (keys.has('arrowright') || keys.has('d')) { mx += 1; P.facing = 1; }
+  if (heldLeft())  { mx -= 1; P.facing = -1; }
+  if (heldRight()) { mx += 1; P.facing = 1; }
   P.x = Math.max(PLAT_LEFT + 14, Math.min(PLAT_RIGHT - 14, P.x + mx * 250 * dt));
 
   // ── swing (edge-triggered) ──
-  const space = keys.has(' ');
+  const space = heldAction();
   P.swingCool = Math.max(0, P.swingCool - dt);
   if (space && !sg.spaceWas && P.swingCool <= 0) { P.swing = 0.22; P.swingCool = 0.30; sfx.sword(); }
   sg.spaceWas = space;
@@ -688,7 +696,7 @@ function updateSpider(dt) {
   if (P.hurtT > 0) P.hurtT -= dt;
 
   // ── bail out the lift door ──
-  if ((keys.has('arrowup') || keys.has('w')) && P.x < DOOR_X + 50) { sg.result = 'bailed'; sfx.chime(); return; }
+  if (heldUp() && P.x < DOOR_X + 50) { sg.result = 'bailed'; sfx.chime(); return; }
 
   // ── spawn waves, flooding harder the longer you linger ──
   sg.spawnTimer -= dt;
@@ -815,8 +823,8 @@ function updateBoss(dt) {
 
   // ── crank the car (momentum, snappier than the day job) ──
   let input = 0;
-  if (keys.has('arrowup') || keys.has('w')) input -= 1;     // up = toward the spider
-  if (keys.has('arrowdown') || keys.has('s')) input += 1;
+  if (heldUp()) input -= 1;     // up = toward the spider
+  if (heldDown()) input += 1;
   const grip = C.webbed > 0 ? 0.45 : 1;                     // web slows the crank
   if (input !== 0) {
     const braking = Math.sign(input) !== Math.sign(C.v) && Math.abs(C.v) > 1;
