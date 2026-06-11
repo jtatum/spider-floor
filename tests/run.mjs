@@ -286,6 +286,21 @@ test('music resume position wraps correctly through the loop', (G) => {
   assert.equal(pos(0, 0, 0), 0, 'the very start');
 });
 
+test('a one-shot track hands off to its follow-up, then replays on return', (G) => {
+  const M = { victory: { loop: false, then: 'levelup' }, levelup: {}, title: {} };
+  const R = (done, name) => G.musicResolve(done, name, M);
+  // not yet finished: the victory request plays victory
+  assert.deepEqual(R(null, 'victory'), { play: 'victory', clear: false });
+  // finished + screen still asks for victory → keep the follow-up going (no restart)
+  assert.deepEqual(R('victory', 'victory'), { play: 'levelup', clear: false });
+  // finished + the follow-up is what's asked → stay on it, don't forget
+  assert.deepEqual(R('victory', 'levelup'), { play: 'levelup', clear: false });
+  // navigated to an unrelated screen → forget, so victory can play fresh next win
+  assert.deepEqual(R('victory', 'title'), { play: 'title', clear: true });
+  // a one-shot with no follow-up resolves to silence
+  assert.deepEqual(G.musicResolve('victory', 'victory', { victory: { loop: false } }), { play: null, clear: false });
+});
+
 // ── Spider Floor ─────────────────────────────────────────────────────────────
 
 // step off the lift onto the Spider Floor ledge

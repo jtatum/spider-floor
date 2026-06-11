@@ -8,6 +8,7 @@ const MUSIC_BY_SCREEN = {
   TITLE: 'title', OPERATOR: 'title', WORKSHOP: 'title', ACH: 'title',   // title theme covers the menu cluster
   PLAYING: 'gameplay',                        // resumes across level-up detours (see audio.js)
   LEVELUP: 'levelup', SHIFT_DONE: 'shop', SHOP: 'shop', SPIDER: 'spider', BOSS: 'boss', FIRED: 'fired',
+  VICTORY: 'victory',                         // the win song plays once, then hands off (see audio.js)
 };
 
 let lastT = performance.now();

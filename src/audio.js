@@ -15,6 +15,21 @@ function musicPosOf(cfg, sAt, sOff, now) {
   return p;
 }
 
+// Decide what the per-frame driver should actually play. Most tracks loop, so
+// the answer is just `name`. But a one-shot (loop:false, e.g. the victory song)
+// plays once and then hands off to its `then` track — and because the driver
+// keeps asking for the same screen track every frame, we must NOT restart the
+// one-shot while it's "done". `done` is the name of a one-shot that has played
+// out. Returns the track to play and whether to forget that done-state (because
+// we've navigated to an unrelated screen, so the one-shot may play fresh again).
+function musicResolve(done, name, MUSIC) {
+  if (!done) return { play: name, clear: false };
+  const d = MUSIC[done];
+  if (name === done) return { play: (d && d.then) || null, clear: false };  // keep the follow-up
+  if (d && name === d.then) return { play: name, clear: false };            // already on it
+  return { play: name, clear: true };                                       // moved on
+}
+
 const sfx = (() => {
   let ac = null, master = null, muted = false;
   let mOsc = null, mGain = null;          // the motor: a persistent hum that tracks speed
@@ -58,8 +73,10 @@ const sfx = (() => {
     spider:   { base: 'audio/spider',   loopStart: 7.730,  loopEnd: 120.695, gain: 0.5 },
     boss:     { base: 'audio/boss',     loopStart: 0.209,  loopEnd: 86.138,  gain: 0.5 },
     fired:    { base: 'audio/fired',    loopStart: 32.804, loopEnd: 90.831,  gain: 0.5 },
+    // the victory song has lyrics — it plays ONCE, then hands off to a loop
+    victory:  { base: 'audio/victory',  loop: false, then: 'levelup', gain: 0.55 },
   };
-  let musicGain = null, musicSrc = null, musicCur = null, musicReq = null;
+  let musicGain = null, musicSrc = null, musicCur = null, musicReq = null, oneShotDone = null;
   // for resume-capable tracks (gameplay): remember where we left off so a brief
   // level-up detour doesn't restart the bed from its intro every time.
   let playName = null, playCfg = null, startedAt = 0, startOffset = 0;
@@ -101,35 +118,46 @@ const sfx = (() => {
   // Called every frame by the main loop, so it doubles as the retry that starts
   // the music the instant the audio context unlocks.
   function music(name) {
-    musicReq = name;
-    if (!name) { musicCur = null; stopMusicSrc(); return; }
+    if (!name) { musicReq = null; musicCur = null; stopMusicSrc(); return; }
     ensure();
     // Browsers block audio until a user gesture; the context starts 'suspended'.
     // Don't build into a suspended context (it can resume muted or mid-fade) —
     // wait until it's actually running, then start cleanly from the top. Because
     // we only commit musicCur once running, the loop keeps retrying until unlock.
     if (!ac || ac.state !== 'running') return;
-    if (name === musicCur) return;       // already playing/queued the right track
-    musicCur = name;
+    // a finished one-shot hands off to its follow-up (and is forgotten once we
+    // move to an unrelated screen, so it can play fresh on the next win)
+    const r = musicResolve(oneShotDone, name, MUSIC);
+    if (r.clear) oneShotDone = null;
+    const eff = r.play;
+    musicReq = eff;
+    if (!eff) { musicCur = null; stopMusicSrc(); return; }   // one-shot with no follow-up → silence
+    if (eff === musicCur) return;        // already playing/queued the right track
+    musicCur = eff;
     if (!musicGain) { musicGain = ac.createGain(); musicGain.gain.value = 0; musicGain.connect(master); }
-    const cfg = MUSIC[name];
-    load(name).then(buf => {
-      if (musicReq !== name) return;     // the screen changed while we were decoding
+    const cfg = MUSIC[eff];
+    const looping = cfg.loop !== false;
+    load(eff).then(buf => {
+      if (musicReq !== eff) return;      // the screen changed while we were decoding
       stopMusicSrc(0.08);
       const src = ac.createBufferSource();
       src.buffer = buf;
-      src.loop = true;
-      src.loopStart = cfg.loopStart;
-      src.loopEnd = Math.min(cfg.loopEnd, buf.duration);
+      src.loop = looping;
+      if (looping) { src.loopStart = cfg.loopStart; src.loopEnd = Math.min(cfg.loopEnd, buf.duration); }
       src.connect(musicGain);
       const t = ac.currentTime;
       musicGain.gain.cancelScheduledValues(t);
       musicGain.gain.setValueAtTime(0.0001, t);
       musicGain.gain.linearRampToValueAtTime(cfg.gain, t + 0.4);   // gentle fade-in
-      const offset = (cfg.resume && resumeStore[name] != null) ? resumeStore[name] : 0;
+      const offset = (cfg.resume && resumeStore[eff] != null) ? resumeStore[eff] : 0;
       src.start(0, offset);
       musicSrc = src;
-      playCfg = cfg; playName = name; startedAt = t; startOffset = offset;
+      playCfg = cfg; playName = eff; startedAt = t; startOffset = offset;
+      if (!looping) {                    // a one-shot: when it plays out, hand off
+        src.onended = () => {
+          if (musicSrc === src && musicReq === eff) { oneShotDone = eff; musicCur = null; musicSrc = null; }
+        };
+      }
     }).catch(() => {});                  // a missing/undecodable file just stays silent
   }
 
