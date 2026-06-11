@@ -100,6 +100,29 @@ const CEL_COLORS = ['#ffd44a', '#7adf9a', '#6ab8ff', '#ff7a9a', '#d88aff', '#ffa
 const CEL_EMOJI = ['🎉', '⭐', '💰', '🛗', '💎', '🍀'];
 const cel = { screen: null, last: 0, spawn: 0, t: 0, parts: [] };
 
+// Color emoji through ctx.fillText re-rasterizes the glyph EVERY draw — at our
+// random fractional sizes the font cache never hits, and the bitmap churn
+// (MB/s of garbage) stalls the whole tab when the GC collects it. So: each
+// glyph is rasterized exactly ONCE into a small offscreen canvas, and every
+// frame after that is a cheap drawImage scale.
+const emojiSprites = new Map();
+function emojiSprite(char) {
+  let c = emojiSprites.get(char);
+  if (!c) {
+    c = document.createElement('canvas');
+    c.width = 64; c.height = 64;
+    const g = c.getContext('2d');
+    g.font = '52px serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(char, 32, 36);
+    emojiSprites.set(char, c);
+  }
+  return c;
+}
+function drawEmoji(char, size) {     // call with ctx already translated/rotated
+  ctx.drawImage(emojiSprite(char), -size / 2, -size / 2, size, size);
+}
+
 function celebrate(screen) {
   const now = performance.now();
   let dt = Math.min(0.05, (now - cel.last) / 1000);
@@ -172,9 +195,7 @@ function celebrate(screen) {
     } else if (p.kind === 'emoji') {
       ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
       ctx.globalAlpha = p.life > 4.5 ? Math.max(0, 1 - (p.life - 4.5)) : 1;
-      ctx.font = `${p.size}px serif`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(p.char, 0, 0);
+      drawEmoji(p.char, p.size);
       ctx.restore();
       ctx.globalAlpha = 1;
     } else if (p.kind === 'mote') {
@@ -363,9 +384,7 @@ function drawFx() {
     ctx.globalAlpha = Math.max(0, 1 - p.life / p.max);
     if (p.emoji) {                       // a celebratory emoji, tumbling
       ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot || 0);
-      ctx.font = `${p.size}px serif`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(p.emoji, 0, 0);
+      drawEmoji(p.emoji, p.size);
       ctx.restore();
     } else {
       ctx.fillStyle = p.color;
