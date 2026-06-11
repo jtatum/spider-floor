@@ -65,7 +65,7 @@ const HINTS = {
   SHOP:     'F fuse · Z/X specials · R restock · ENTER start',
   LEVELUP:  '1-9 pick · R reroll · B banish · S skip (+2◆)',
   WORKSHOP: '1-9/0 buy a perk · A achievements · ESC back',
-  OPERATOR: '1-5 pick an operator · SPACE last crew · ESC back',
+  OPERATOR: '1-5 pick an operator · SPACE last crew · H heat · ESC back',
   ACH:      'ESC back',
   SHIFT_DONE: 'SPACE shop',
   FIRED:    'SPACE clock in again · W workshop',

@@ -301,6 +301,65 @@ test('a one-shot track hands off to its follow-up, then replays on return', (G) 
   assert.deepEqual(G.musicResolve('victory', 'victory', { victory: { loop: false } }), { play: null, clear: false });
 });
 
+// ── heat ─────────────────────────────────────────────────────────────────────
+
+test('heat is hidden until the cord is cut, then unlocks rung by rung', (G) => {
+  assert.equal(G.maxHeatUnlocked(), 0, 'no heat on a fresh profile');
+  G.save.beatBoss = true;
+  assert.equal(G.maxHeatUnlocked(), 1, 'first win opens heat 1');
+  G.save.stats.heatCleared = 3;
+  assert.equal(G.maxHeatUnlocked(), 4, 'clearing h unlocks h+1');
+  G.save.stats.heatCleared = 99;
+  assert.equal(G.maxHeatUnlocked(), G.HEAT.length, 'capped at the top of the ladder');
+});
+
+test('newRun clamps heat to what is actually unlocked', (G) => {
+  G.run = G.newRun('sal', 5);
+  assert.equal(G.run.heat, 0, 'no heat without a boss win');
+  G.save.beatBoss = true; G.save.stats.heatCleared = 1;
+  G.run = G.newRun('sal', 5);
+  assert.equal(G.run.heat, 2, 'clamped to the unlocked rung');
+});
+
+test('heat 1 raises quotas; heat 3 removes a strike; heat 4 squeezes patience', (G) => {
+  G.save.beatBoss = true; G.save.stats.heatCleared = 4;
+  G.run = G.newRun('sal', 0); G.startShift();
+  const q0 = G.game.quota, s0 = G.maxStrikes(), p0 = G.waitPat(3);
+  G.run = G.newRun('sal', 4); G.startShift();
+  assert.equal(G.game.quota, Math.round(q0 * 1.2), 'WORD GETS AROUND raises the quota');
+  assert.equal(G.maxStrikes(), s0 - 1, 'CORPORATE AUDIT removes a strike');
+  assert.ok(G.waitPat(3) < p0, 'NO LOITERING squeezes patience');
+});
+
+test('heat 2: stairs out of order — an ignored call strikes', (G) => {
+  G.save.beatBoss = true; G.save.stats.heatCleared = 1;
+  G.run = G.newRun('sal', 2); G.startShift();
+  const e = G.game.elev; e.doorTarget = 0; e.doors = 0; e.y = 0;
+  G.game.passengers = [];
+  G.spawnPassenger(4);
+  G.game.passengers.at(-1).patience = 0.0001;
+  G.step(2);
+  assert.equal(G.game.strikes, 1, 'no more free stairs at heat 2');
+});
+
+test('a boss win records the heat and pays the ladder achievements', (G) => {
+  G.save.beatBoss = true; G.save.stats.heatCleared = 0;
+  G.run = G.newRun('sal', 1); G.startShift();
+  G.enterBoss();
+  const bg = G.game.bossGame; bg.intro = 0;
+  let guard = 0;
+  while (!bg.result && guard++ < 4000) {
+    bg.sState = 'drop'; bg.sInvuln = 0;
+    bg.car.y = G.BOSS.carTop + 60; bg.car.v = -400;
+    G.update(1 / 60);
+  }
+  assert.equal(bg.result, 'win');
+  G.step(160);
+  assert.equal(G.save.stats.heatCleared, 1, 'the cleared rung is recorded');
+  assert.ok(G.save.ach.heat1, '"Hotter Days" unlocked');
+  assert.equal(G.maxHeatUnlocked(), 2, 'the next rung is open');
+});
+
 // ── Spider Floor ─────────────────────────────────────────────────────────────
 
 // step off the lift onto the Spider Floor ledge

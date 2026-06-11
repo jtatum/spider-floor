@@ -32,7 +32,9 @@ const SHIM = `
   spawnPassenger, buyFuse, buyMeta, buySpecial, openShop, rerollShop, loadSave, persist,
   gainXP, xpCost, eligibleUpgrades, levelChoices, openLevelUp, pickLevel, skipLevel, rerollLevel, banishLevel,
   slotsUsed, FITTING_SLOTS, HABIT_SLOTS, fittingSlotCap, habitSlotCap,
-  OPERATORS, isOpUnlocked, startWithOperator, waitPat, ridePatFor, musicPosOf, musicResolve,
+  OPERATORS, isOpUnlocked, startWithOperator, waitPat, ridePatFor,
+  HEAT, maxHeatUnlocked, openOperatorSelect, cycleHeat,
+  get menuHeat(){return menuHeat}, set menuHeat(v){menuHeat=v}, musicPosOf, musicResolve,
   nearestFloorIdx, isAligned, doorsOpen, ridersAboard, slotsAboard, capacityNow, enterSpider, spawnWebSpider,
   enterBoss, updateBoss, exitBoss, BOSS,
 };

@@ -178,6 +178,10 @@ function drawIntro() {
   const ms = maxStrikes();
   ctx.fillText(`deliver ${game.quota} before ${['zero','one','two','three','four','five','six'][ms] || ms} walk-offs`, W / 2, H / 2 - 24);
 
+  if (run.heat > 0) {
+    ctx.fillStyle = '#ff7a3a'; ctx.font = 'bold 13px ui-monospace';
+    ctx.fillText(`HEAT ${run.heat} — ${HEAT.slice(0, run.heat).map(h => h.name).join(' · ')}`, W / 2, H / 2 + 96);
+  }
   if (game.modifiers.length === 0) {
     ctx.fillStyle = '#6a7a5a'; ctx.font = 'italic 15px ui-monospace';
     ctx.fillText('a calm, ordinary day', W / 2, H / 2 + 16);
@@ -716,8 +720,10 @@ function drawHUD() {
   ctx.textAlign = 'left'; ctx.fillStyle = '#bfa45f';
   ctx.fillText(`SHIFT ${run.shiftNum}`, 16, 18);
   ctx.fillStyle = '#caa33a'; ctx.fillText(`LV ${run.level + 1}`, 100, 18);
-  ctx.fillStyle = '#bfa45f'; ctx.fillText(`◆ ${run.parts}`, 162, 18);
-  if (run.fuses > 0) { ctx.fillStyle = '#d4a050'; ctx.fillText(`FUSE ${run.fuses}`, 230, 18); }
+  let hudX = 158;
+  if (run.heat > 0) { ctx.fillStyle = '#ff7a3a'; ctx.fillText(`H${run.heat}`, hudX, 18); hudX += 42; }
+  ctx.fillStyle = '#bfa45f'; ctx.fillText(`◆ ${run.parts}`, hudX, 18);
+  if (run.fuses > 0) { ctx.fillStyle = '#d4a050'; ctx.fillText(`FUSE ${run.fuses}`, hudX + 68, 18); }
 
   // quota progress
   ctx.textAlign = 'center';
@@ -913,7 +919,7 @@ function drawTitle() {
   }
 
   drawButton('CLOCK IN  ▸', W / 2 - 290, H - 128, 200, 46,
-             () => { menu = 'OPERATOR'; }, true);
+             () => { openOperatorSelect(); }, true);
   drawButton(`WORKSHOP ★${save.stars}`, W / 2 - 78, H - 128, 184, 46,
              () => { menu = 'WORKSHOP'; }, false);
   const got = ACHIEVEMENTS.filter(a => save.ach[a.key]).length;
@@ -1258,6 +1264,19 @@ function drawVictory() {
   ctx.fillText('★ CUT THE CORD  +30 unlocked', W / 2, 404);
   ctx.fillStyle = '#7a6a4a'; ctx.font = '13px ui-monospace';
   ctx.fillText('the title remembers what you did here.', W / 2, 432);
+  // the heat ladder: what you cleared, and the rung that just unlocked
+  if (run.heat > 0) {
+    ctx.fillStyle = '#ff7a3a'; ctx.font = 'bold 15px ui-monospace';
+    ctx.fillText(`cleared at HEAT ${run.heat}`, W / 2, 466);
+  }
+  if (save.stats.heatCleared < HEAT.length) {
+    const next = save.stats.heatCleared + 1;
+    ctx.fillStyle = '#9a7a5a'; ctx.font = '13px ui-monospace';
+    ctx.fillText(`HEAT ${next} unlocked — ${HEAT[next - 1].name.toLowerCase()}. the building remembers.`, W / 2, run.heat > 0 ? 490 : 466);
+  } else {
+    ctx.fillStyle = '#9a7a5a'; ctx.font = '13px ui-monospace';
+    ctx.fillText('heat 5 cleared. the building has nothing left to throw at you.', W / 2, run.heat > 0 ? 490 : 466);
+  }
   drawButton('▸  CLOCK OUT A HERO', W / 2 - 140, H - 130, 280, 48, () => { menu = null; game.state = 'TITLE'; }, true);
 }
 
@@ -1310,8 +1329,8 @@ function drawOperatorSelect() {
   ctx.font = '13px ui-monospace'; ctx.fillStyle = '#7a6a4a';
   ctx.fillText('every operator works the same lift — none of them work it the same way', W / 2, 78);
 
-  const cardW = 560, cardH = 86, gapY = 12;
-  const x0 = (W - cardW) / 2, y0 = 108;
+  const cardW = 560, cardH = 84, gapY = 11;
+  const x0 = (W - cardW) / 2, y0 = 100;
   OPERATORS.forEach((o, i) => {
     const cy = y0 + i * (cardH + gapY);
     const unlocked = isOpUnlocked(o);
@@ -1351,10 +1370,35 @@ function drawOperatorSelect() {
     }
   });
 
+  // ── the heat dial — only once the cord has been cut ──
+  if (maxHeatUnlocked() > 0) {
+    const hy = 592;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    let hx = x0;
+    ctx.font = 'bold 13px ui-monospace';
+    ctx.fillStyle = menuHeat > 0 ? '#ff7a3a' : '#6a5a4a';
+    ctx.fillText(`HEAT ${menuHeat}`, hx, hy); hx += 64;
+    for (let i = 0; i < HEAT.length; i++) {              // flame pips
+      const lit = i < menuHeat, reachable = i < maxHeatUnlocked();
+      ctx.fillStyle = lit ? '#ff7a3a' : reachable ? '#4a3a30' : '#2a2218';
+      ctx.beginPath();
+      ctx.moveTo(hx + 5, hy - 6); ctx.quadraticCurveTo(hx + 11, hy, hx + 5, hy + 6);
+      ctx.quadraticCurveTo(hx - 1, hy, hx + 5, hy - 6);
+      ctx.fill();
+      hx += 16;
+    }
+    hx += 10;
+    ctx.font = '11px ui-monospace'; ctx.fillStyle = '#9a7a5a';
+    const desc = menuHeat === 0 ? 'a normal career — press H to turn up the heat'
+      : HEAT.slice(0, menuHeat).map(h => h.name).join(' · ');
+    ctx.fillText(desc, hx, hy);
+    buttons.push({ x: x0 - 4, y: hy - 12, w: cardW + 8, h: 24, fn: cycleHeat });
+  }
+
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#7a6a4a'; ctx.font = '12px ui-monospace';
-  ctx.fillText('1-5 pick · SPACE clock in with your last crew · ESC back', W / 2, H - 78);
-  drawButton('◂  BACK', W / 2 - 110, H - 60, 220, 40, () => { menu = null; }, false);
+  ctx.fillText(`1-5 pick · SPACE clock in with your last crew${maxHeatUnlocked() > 0 ? ' · H heat' : ''} · ESC back`, W / 2, H - 70);
+  drawButton('◂  BACK', W / 2 - 110, H - 54, 220, 36, () => { menu = null; }, false);
 }
 
 // ── the Workshop: permanent cross-run perks bought with ★ stars ──
@@ -1423,7 +1467,7 @@ function drawAchievements() {
   ctx.font = '13px ui-monospace'; ctx.fillStyle = '#8a8aa2';
   ctx.fillText(`${unlocked} / ${ACHIEVEMENTS.length} unlocked  ·  ★ ${earned} of ${ACH_TOTAL} earned  ·  spend in the Workshop`, W / 2, 66);
 
-  const cols = 4, cardW = 186, cardH = 56, gapX = 8, gapY = 7;
+  const cols = 5, cardW = 170, cardH = 56, gapX = 6, gapY = 7;   // 5 columns: 37 cards must fit above the BACK button
   const totalW = cols * cardW + (cols - 1) * gapX;
   const x0 = (W - totalW) / 2, y0 = 88;
   ACHIEVEMENTS.forEach((a, i) => {

@@ -50,13 +50,14 @@ function handleKey(k) {
     return;
   }
   if (st === 'TITLE') {
-    if (k === ' ' || k === 'enter') { menu = 'OPERATOR'; }
+    if (k === ' ' || k === 'enter') { openOperatorSelect(); }
     if (k === 'w') { menu = 'WORKSHOP'; }
     if (k === 'a') { menu = 'ACH'; }
     return;
   }
   if (st === 'OPERATOR') {
     if (k === 'escape') { menu = null; return; }
+    if (k === 'h' && maxHeatUnlocked() > 0) { cycleHeat(); return; }
     if (k === ' ' || k === 'enter') { startWithOperator(save.lastOperator || 'sal'); return; }
     if (k >= '1' && k <= '9') {
       const o = OPERATORS[parseInt(k, 10) - 1];
@@ -193,11 +194,12 @@ function updateFx(dt) {
 }
 
 // patience scales with the trip being asked for — a hop is not a haul
+function heatPatMul() { return runHeat() >= 4 ? 0.88 : 1; }   // NO LOITERING
 function waitPat(dist) {
-  return (CFG.patienceTime + CFG.patPerFloor * dist) * game.m.patWaitMul * game.patMul;
+  return (CFG.patienceTime + CFG.patPerFloor * dist) * game.m.patWaitMul * game.patMul * heatPatMul();
 }
 function ridePatFor(dist) {
-  return (CFG.ridePatience + CFG.ridePatPerFloor * dist) * game.m.patRideMul * game.patMul;
+  return (CFG.ridePatience + CFG.ridePatPerFloor * dist) * game.m.patRideMul * game.patMul * heatPatMul();
 }
 
 function spawnPassenger(origin = 0) {
@@ -496,11 +498,22 @@ function eligibleUpgrades() {
     return slotsUsed(u.kind) < cap;
   });
 }
+// the clock-in screen's heat dial (only shown once the cord has been cut)
+let menuHeat = 0;
+function openOperatorSelect() {
+  menuHeat = Math.max(0, Math.min(maxHeatUnlocked(), save.lastHeat || 0));
+  menu = 'OPERATOR';
+}
+function cycleHeat() {
+  menuHeat = (menuHeat + 1) % (maxHeatUnlocked() + 1);
+  sfx.door();
+}
 function startWithOperator(key) {
   save.lastOperator = key;
+  save.lastHeat = menuHeat;
   persist();
   menu = null;
-  run = newRun(key);
+  run = newRun(key, menuHeat);
   startShift();
 }
 function levelChoices(n) { return shuffle(eligibleUpgrades()).slice(0, n); }
@@ -570,7 +583,8 @@ function banishLevel(u) {
 function losePassenger(p) {
   // an upstairs caller you never picked up just takes the stairs — you lose the
   // fare, not your job. (Once they're ABOARD, they're yours like anyone else.)
-  const tookStairs = p.state === 'waiting' && p.origin > 0;
+  // At heat 2+ the STAIRS ARE OUT OF ORDER: an unanswered call strikes like any walk-off.
+  const tookStairs = p.state === 'waiting' && p.origin > 0 && runHeat() < 2;
   p.state = 'left';
   p.removeAt = game.t + 0.7;
   if (tookStairs) return;
@@ -630,11 +644,12 @@ function spawnWebSpider(sg) {
   const x = PLAT_LEFT + 30 + Math.random() * (PLAT_RIGHT - PLAT_LEFT - 60);
   // both descent and crawl speed climb with how long you've lingered — the web
   // gets genuinely faster, so the longer you farm the more it outruns your blade
+  const webHeat = runHeat() >= 5 ? 1.25 : 1;   // THE WEB REMEMBERS
   sg.spiders.push({
     x, y: 30 + Math.random() * 30,
-    vy: 80 + run.shiftNum * 3 + sg.t * 3.5 + Math.random() * 40,
+    vy: (80 + run.shiftNum * 3 + sg.t * 3.5 + Math.random() * 40) * webHeat,
     dropAt: PLAT_Y - 60 - Math.random() * 110,
-    crawl: 54 + run.shiftNum * 3 + sg.t * 5 + Math.random() * 30,
+    crawl: (54 + run.shiftNum * 3 + sg.t * 5 + Math.random() * 30) * webHeat,
     state: 'descend', sway: Math.random() * 6, dead: false, deadT: 0, vyDead: 0,
     size: 11 + Math.random() * 4, hitCool: 0,
   });
@@ -763,7 +778,8 @@ const BOSS = {
 function enterBoss() {
   save.stats.bossTries++; checkAchievements();
   game.state = 'BOSS';
-  const hp = 6 + Math.floor((run.shiftNum - 1) / 3);   // scales a little with how far you got
+  const hp = 6 + Math.floor((run.shiftNum - 1) / 3)    // scales a little with how far you got
+           + (runHeat() >= 5 ? 2 : 0);                 // THE WEB REMEMBERS
   game.bossGame = {
     t: 0, intro: 3.2, result: null, exitT: 0,
     sHp: hp, sMaxHp: hp, sY: BOSS.restY, sState: 'wind', sTimer: 1.6, sInvuln: 0, sShake: 0,
@@ -821,8 +837,8 @@ function updateBoss(dt) {
       if (bg.attackKind === 'sweep') {
         bg.danger.active = true; sfx.hurt();
       } else if (bg.attackKind === 'brood') {
-        const n = 2 + Math.floor(run.shiftNum / 4);
-        for (let i = 0; i < Math.min(4, n); i++) bossSpawnMini(bg);
+        const n = 2 + Math.floor(run.shiftNum / 4) + (runHeat() >= 5 ? 1 : 0);
+        for (let i = 0; i < Math.min(runHeat() >= 5 ? 5 : 4, n); i++) bossSpawnMini(bg);
         bg.danger = null;
       }
       bg.sState = 'strike'; bg.sTimer = 0.45;
@@ -883,7 +899,8 @@ function exitBoss() {
   if (bg.result === 'win') {
     save.stats.bossWins++;
     save.beatBoss = true;
-    checkAchievements();          // Cut the Cord (+30★) fires here
+    bumpStat('heatCleared', run.heat || 0);   // climbing the ladder unlocks the next rung
+    checkAchievements();          // Cut the Cord (+30★) and heat achievements fire here
     persist();
     game.state = 'VICTORY';
     game.doneT = 0;

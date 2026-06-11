@@ -86,6 +86,21 @@ function isOpUnlocked(o) { return !o.unlock || o.unlock(save.stats); }
 function fittingSlotCap() { return FITTING_SLOTS; }
 function habitSlotCap() { return OP().habitCap ?? HABIT_SLOTS; }
 
+// ── heat: the post-victory ladder. Cut the cord once and the clock-in screen
+// grows a dial — each rung is a fixed, NAMED condition (readable, not random),
+// and clearing the boss at heat h unlocks h+1. The building remembers you.
+const HEAT = [
+  { name: 'WORD GETS AROUND',    desc: 'Quotas are 20% higher.' },
+  { name: 'STAIRS OUT OF ORDER', desc: 'Ignored upstairs calls cost a strike.' },
+  { name: 'CORPORATE AUDIT',     desc: 'One fewer strike before they fire you.' },
+  { name: 'NO LOITERING',        desc: 'Everyone is 12% less patient.' },
+  { name: 'THE WEB REMEMBERS',   desc: 'Every spider is faster. All of them.' },
+];
+function runHeat() { return (run && run.heat) || 0; }
+function maxHeatUnlocked() {
+  return save.beatBoss ? Math.min(HEAT.length, save.stats.heatCleared + 1) : 0;
+}
+
 function xpCost(level) { return CFG.xpBase + level * CFG.xpGrowth; }
 function gainXP(amount) {
   run.xp += amount * (OP().xpMul || 1);
@@ -359,6 +374,10 @@ const ACHIEVEMENTS = [
   { key: 'perks12',   name: 'Master of the House',       desc: 'Own 12 perk levels.',                      award: 12, test: s => s.perks >= 12 },
   { key: 'climb',     name: 'The Long Climb',            desc: 'Climb past the penthouse to face the truth.', award: 4, test: s => s.bossTries >= 1 },
   { key: 'cutCord',   name: 'Cut the Cord',              desc: 'Defeat the spider that controls the lift.', award: 30, test: s => s.bossWins >= 1 },
+  // ── the heat ladder ──
+  { key: 'heat1',     name: 'Hotter Days',               desc: 'Cut the cord at heat 1.',                  award: 8,  test: s => s.heatCleared >= 1 },
+  { key: 'heat3',     name: 'Pressure Cooker',           desc: 'Cut the cord at heat 3.',                  award: 14, test: s => s.heatCleared >= 3 },
+  { key: 'heat5',     name: 'Ice in the Veins',          desc: 'Cut the cord at heat 5.',                  award: 24, test: s => s.heatCleared >= 5 },
 ];
 
 function defaultStats() {
@@ -366,12 +385,12 @@ function defaultStats() {
            vips: 0, tippers: 0, movers: 0, powerups: 0, perks: 0, everMaxed: 0,
            bestMaxedRun: 0, bestShiftDeliveries: 0, bestRunParts: 0, perfectShifts: 0,
            spiderVisits: 0, bestSpiderLoot: 0, noHitClears: 0, twoModShift: 0,
-           nightShift: 0, comeback: 0, bossTries: 0, bossWins: 0 };
+           nightShift: 0, comeback: 0, bossTries: 0, bossWins: 0, heatCleared: 0 };
 }
 function defaultSave() {
   const meta = {};
   for (const m of META) meta[m.key] = 0;
-  return { stars: 0, meta, best: { shifts: 0, delivered: 0 }, stats: defaultStats(), ach: {}, beatBoss: false, muted: false, lastOperator: 'sal' };
+  return { stars: 0, meta, best: { shifts: 0, delivered: 0 }, stats: defaultStats(), ach: {}, beatBoss: false, muted: false, lastOperator: 'sal', lastHeat: 0 };
 }
 function loadSave() {
   const def = defaultSave();
@@ -409,10 +428,11 @@ function checkAchievements() {
 const ACH_TOTAL = ACHIEVEMENTS.reduce((a, b) => a + b.award, 0);   // total ★ obtainable
 
 function maxStrikes() {
-  return CFG.strikesAllowed + save.meta.unionCard + ((run && run.up.reinforced) || 0) + ((game && game.extraStrike) || 0);
+  return CFG.strikesAllowed + save.meta.unionCard + ((run && run.up.reinforced) || 0) + ((game && game.extraStrike) || 0)
+       - (runHeat() >= 3 ? 1 : 0);   // CORPORATE AUDIT
 }
 
-function newRun(opKey) {
+function newRun(opKey, heat) {
   save.stats.runs++;
   checkAchievements();
   const operator = opKey || save.lastOperator || 'sal';
@@ -435,6 +455,7 @@ function newRun(opKey) {
   }
   return {
     operator,
+    heat: Math.max(0, Math.min(maxHeatUnlocked(), heat || 0)),
     up,
     parts: [0, 5, 10, 15, 20][meta.severance] ?? 0,
     rerolls: 0,
@@ -491,7 +512,8 @@ function mods() {
 // shop also denies the full relief suite, so you can't trivialise late shifts.
 function shiftParams(n) {
   const floors = Math.min(MAX_FLOORS, 5 + Math.floor((n + 1) / 2)); // 5 → 12, grows a touch sooner
-  const quota  = 6 + Math.floor(n * 2.2);
+  let quota  = 6 + Math.floor(n * 2.2);
+  if (runHeat() >= 1) quota = Math.round(quota * 1.2);   // WORD GETS AROUND
   const spawn  = Math.max(1.5, 4.6 - n * 0.34);   // seconds between arrivals
   const patMul = Math.max(0.5, 1 - n * 0.06);     // patience squeeze
   return { floors, quota, spawn, patMul };
