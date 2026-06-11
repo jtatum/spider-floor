@@ -586,6 +586,13 @@ test('the third visit hangs THE THREAD from a hole in the ceiling', (G) => {
   assert.ok(G.game.banner && /UP/.test(G.game.banner.text), 'the truth, in so many words');
 });
 
+test('the Tetris rule: headers defect to Cyrillic, body text stays loyal', (G) => {
+  assert.equal(G.cyr('THE SPIDER FLOOR'), 'THЭ SPIDЭЯ FLOOЯ');
+  assert.equal(G.cyr('SHIFT 3 SURVIVED'), 'SHIFT 3 SUЯVIVЭD');
+  assert.equal(G.cyr('the people\'s worst elevator'), 'the people\'s worst elevator',
+    'lowercase passes through untouched');
+});
+
 // ── metrics: the local flight recorder ───────────────────────────────────────
 
 test('a survived shift writes a flight-recorder entry with the tuning signals', (G) => {

@@ -246,6 +246,12 @@ function celMote() {
     phase: Math.random() * 7, life: 0 });
 }
 
+// ── the Tetris rule: BIG letters defect to their Cyrillic look-alikes; body
+// text stays loyal and legible. Headers only — В ЛИФТЕ ВСЕ РАВНЫ.
+function cyr(s) {
+  return s.replace(/R/g, 'Я').replace(/N/g, 'И').replace(/E/g, 'Э');
+}
+
 // a draggable slider: grab anywhere on the track. Registered into `sliders`
 // each frame, the pointer handlers in sim.js do the rest.
 function drawSlider(label, x, y, w, value, set) {
@@ -309,7 +315,7 @@ function drawPaused() {
   ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#bfa45f'; ctx.font = 'bold 40px ui-monospace';
-  ctx.fillText('PAUSED', W / 2, 156);
+  ctx.fillText(cyr('PAUSED'), W / 2, 156);
   drawSettingsRows(true);
 }
 
@@ -318,7 +324,7 @@ function drawSettingsMenu() {
   ctx.fillStyle = '#0b0a0d'; ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#bfa45f'; ctx.font = 'bold 40px ui-monospace';
-  ctx.fillText('SETTINGS', W / 2, 156);
+  ctx.fillText(cyr('SETTINGS'), W / 2, 156);
   drawSettingsRows(false);
 }
 
@@ -413,7 +419,7 @@ function drawIntro() {
   ctx.fillRect(0, H / 2 - 120, W, 240);
   ctx.fillStyle = '#bfa45f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = 'bold 44px ui-monospace';
-  ctx.fillText(`SHIFT ${run.shiftNum}`, W / 2, H / 2 - 58);
+  ctx.fillText(cyr(`SHIFT ${run.shiftNum}`), W / 2, H / 2 - 58);
   ctx.font = '14px ui-monospace'; ctx.fillStyle = '#7a6a4a';
   const ms = maxStrikes();
   ctx.fillText(`deliver ${game.quota} before ${['zero','one','two','three','four','five','six'][ms] || ms} walk-offs`, W / 2, H / 2 - 24);
@@ -424,7 +430,7 @@ function drawIntro() {
   }
   if (game.modifiers.length === 0) {
     ctx.fillStyle = '#6a7a5a'; ctx.font = 'italic 15px ui-monospace';
-    ctx.fillText('a calm, ordinary day', W / 2, H / 2 + 16);
+    ctx.fillText('a calm, ordinary day, comrade', W / 2, H / 2 + 16);
   } else {
     let yy = H / 2 + 8;
     for (const md of game.modifiers) {
@@ -1135,9 +1141,9 @@ function drawTitle() {
   drawTitleArt();
   ctx.fillStyle = '#bfa45f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = 'bold 48px ui-monospace, Menlo, monospace';
-  ctx.fillText('THE SPIDER FLOOR', W / 2, 162);
+  ctx.fillText(cyr('THE SPIDER FLOOR'), W / 2, 162);
   ctx.font = '14px ui-monospace'; ctx.fillStyle = '#7a6a4a';
-  ctx.fillText('operating the worst elevator in town', W / 2, 194);
+  ctx.fillText("operating the people's worst elevator", W / 2, 194);
 
   ctx.fillStyle = '#bfa45f'; ctx.font = '15px ui-monospace';
   const lines = [
@@ -1264,7 +1270,7 @@ function drawBoss() {
   ctx.fillStyle = '#c83050'; ctx.fillRect(bx, 30, bw * Math.max(0, bg.sHp / bg.sMaxHp), 12);
   ctx.strokeStyle = '#6a3a4a'; ctx.lineWidth = 1; ctx.strokeRect(bx + 0.5, 30.5, bw - 1, 11);
   ctx.fillStyle = '#e0a0b0'; ctx.font = 'bold 12px ui-monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-  ctx.fillText('THE SPIDER THAT HOLDS YOUR LIFT', cx, 26);
+  ctx.fillText(cyr('THE SPIDER THAT HOLDS YOUR LIFT'), cx, 26);
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   for (let i = 0; i < bg.car.maxHp; i++) {
     ctx.fillStyle = i < bg.car.hp ? '#ff4a6a' : '#3a2030'; ctx.font = 'bold 20px ui-monospace';
@@ -1357,7 +1363,7 @@ function drawVictory() {
   ctx.fillStyle = '#0a0812'; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#ffd44a'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = 'bold 46px ui-monospace';
-  ctx.fillText('THE CORD IS CUT', W / 2, 130);
+  ctx.fillText(cyr('THE CORD IS CUT'), W / 2, 130);
   // the freed elevator on a steel cable, no spider
   const cx = W / 2, t = performance.now() / 1000, ey = 250 + Math.sin(t) * 3;
   ctx.strokeStyle = '#8a8a96'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx, 170); ctx.lineTo(cx, ey - 24); ctx.stroke();
@@ -1396,7 +1402,7 @@ function drawShiftDone() {
   celebrate('SHIFT_DONE');               // fireworks + emoji raining on the floor
   ctx.fillStyle = '#7aaa55'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = 'bold 40px ui-monospace';
-  ctx.fillText(`SHIFT ${run.shiftNum} SURVIVED`, W / 2, H / 2 - 90);
+  ctx.fillText(cyr(`SHIFT ${run.shiftNum} SURVIVED`), W / 2, H / 2 - 90);
   ctx.fillStyle = '#bfa45f'; ctx.font = '18px ui-monospace';
   ctx.fillText(`${game.delivered} delivered  ·  +${game.partsThisShift} ◆ from fares`, W / 2, H / 2 - 36);
   ctx.fillText(`shift bonus  +${game.bonus} ◆`, W / 2, H / 2 - 8);
@@ -1417,7 +1423,7 @@ function drawFired() {
   ctx.fillStyle = 'rgba(13,10,8,0.9)'; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#aa3a32'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = 'bold 50px ui-monospace';
-  ctx.fillText(game.bossLost ? 'THE WEB WINS' : "YOU'RE FIRED", W / 2, H / 2 - 70);
+  ctx.fillText(cyr(game.bossLost ? 'THE WEB WINS' : "YOU'RE FIRED"), W / 2, H / 2 - 70);
   ctx.fillStyle = '#bfa45f'; ctx.font = '18px ui-monospace';
   const survived = run.shiftNum - 1;
   if (game.bossLost) ctx.fillText('the spider reels you back in. the lift still isn\'t yours.', W / 2, H / 2 - 24);
@@ -1436,9 +1442,9 @@ function drawOperatorSelect() {
   ctx.fillStyle = '#0d0a08'; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#bfa45f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = 'bold 32px ui-monospace';
-  ctx.fillText("WHO'S ON THE CRANK?", W / 2, 50);
+  ctx.fillText(cyr("WHO'S ON THE CRANK?"), W / 2, 50);
   ctx.font = '13px ui-monospace'; ctx.fillStyle = '#7a6a4a';
-  ctx.fillText('every operator works the same lift — none of them work it the same way', W / 2, 78);
+  ctx.fillText('every operator works the same lift — the bureau merely files the complaints', W / 2, 78);
 
   const cardW = 560, cardH = 84, gapY = 11;
   const x0 = (W - cardW) / 2, y0 = 100;
@@ -1517,9 +1523,9 @@ function drawWorkshop() {
   ctx.fillStyle = '#0b0a0d'; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#b9c4e0'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = 'bold 34px ui-monospace';
-  ctx.fillText('THE WORKSHOP', W / 2, 54);
+  ctx.fillText(cyr('THE WORKSHOP'), W / 2, 54);
   ctx.font = '14px ui-monospace'; ctx.fillStyle = '#6a6a82';
-  ctx.fillText('permanent perks you keep between jobs — earned by surviving', W / 2, 82);
+  ctx.fillText('permanent perks between jobs — sanctioned by the housing committee', W / 2, 82);
   ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 20px ui-monospace';
   ctx.fillText(`★ ${save.stars} stars`, W / 2, 114);
 
@@ -1572,7 +1578,7 @@ function drawAchievements() {
   ctx.fillStyle = '#0b0a0d'; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#ffd44a'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = 'bold 30px ui-monospace';
-  ctx.fillText('ACHIEVEMENTS', W / 2, 40);
+  ctx.fillText(cyr('ACHIEVEMENTS'), W / 2, 40);
   const unlocked = ACHIEVEMENTS.filter(a => save.ach[a.key]).length;
   const earned = ACHIEVEMENTS.filter(a => save.ach[a.key]).reduce((s, a) => s + a.award, 0);
   ctx.font = '13px ui-monospace'; ctx.fillStyle = '#8a8aa2';
@@ -1606,9 +1612,9 @@ function drawShop() {
   celebrate('SHOP');                     // calm gold motes — payday ambience
   ctx.fillStyle = '#bfa45f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = 'bold 32px ui-monospace';
-  ctx.fillText('THE PARTS SHOP', W / 2, 46);
+  ctx.fillText(cyr('THE PARTS SHOP'), W / 2, 46);
   ctx.font = '13px ui-monospace'; ctx.fillStyle = '#7a6a4a';
-  ctx.fillText('stock up for tomorrow — your build grows on the job, one level at a time', W / 2, 72);
+  ctx.fillText("today's allocation, comrade — the depot provides what the depot provides", W / 2, 72);
   ctx.fillStyle = '#d4a050'; ctx.font = 'bold 20px ui-monospace';
   ctx.fillText(`◆ ${run.parts} parts`, W / 2, 100);
 
@@ -1702,9 +1708,9 @@ function drawLevelUp() {
   celebrate('LEVELUP');                  // confetti behind the choices
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 34px ui-monospace';
-  ctx.fillText(`LEVEL ${run.level + 1}`, W / 2, 86);
+  ctx.fillText(cyr(`LEVEL ${run.level + 1}`), W / 2, 86);
   ctx.fillStyle = '#9a8a64'; ctx.font = '13px ui-monospace';
-  ctx.fillText(lv.banishMode ? '' : 'pick one — it installs immediately', W / 2, 114);
+  ctx.fillText(lv.banishMode ? '' : 'requisition one — installed immediately, no paperwork', W / 2, 114);
   if (lv.banishMode) {
     ctx.fillStyle = '#e0584a'; ctx.font = 'bold 14px ui-monospace';
     ctx.fillText('✕ BANISH: pick a part you never want offered again this run', W / 2, 114);

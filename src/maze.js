@@ -596,7 +596,7 @@ function drawMaze() {
   // ── HUD ──
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#c89aff'; ctx.font = 'bold 22px ui-monospace';
-  ctx.fillText('THE SPIDER FLOOR', W / 2, 34);
+  ctx.fillText(cyr('THE SPIDER FLOOR'), W / 2, 34);
   ctx.fillStyle = '#7a6a8a'; ctx.font = '12px ui-monospace';
   ctx.fillText('the door sealed behind you — find the other lift', W / 2, 58);
   const P = mz.player;
