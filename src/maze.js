@@ -89,7 +89,9 @@ const ISO_TW = 64, ISO_TH = 32, ISO_WH = 26;   // tile width/height px, wall hei
 function isoToScreen(wx, wy) {
   return { x: (wx - wy) * (ISO_TW / 2), y: (wx + wy) * (ISO_TH / 2) };
 }
-// movement is SCREEN-relative (nobody thinks in diamonds)
+// screen direction → world direction, for the ANALOG stick (a pointed thumb
+// means "go where I'm pointing"). Keyboard movement is grid-aligned instead —
+// see updateMaze.
 function screenDirToWorld(sx, sy) {
   const wx = sx / (ISO_TW / 2) + sy / (ISO_TH / 2);
   const wy = -sx / (ISO_TW / 2) + sy / (ISO_TH / 2);
@@ -272,17 +274,28 @@ function updateMaze(dt) {
   if (P.invuln > 0) P.invuln -= dt;
   if (P.rooted > 0) P.rooted -= dt;
 
-  // ── move: keys or the virtual stick, screen-relative either way ──
-  let sx = (heldRight() ? 1 : 0) - (heldLeft() ? 1 : 0);
-  let sy = (heldDown() ? 1 : 0) - (heldUp() ? 1 : 0);
-  if (!sx && !sy && mazeStick && Math.hypot(mazeStick.dx, mazeStick.dy) > 0.18) {
-    sx = mazeStick.dx; sy = mazeStick.dy;
+  // ── move ──
+  // KEYS are GRID-aligned: each arrow walks a corridor (→ is the down-right
+  // diagonal, ↑ the up-right) — playtest verdict: corridors run along the iso
+  // diagonals, so screen-cardinal keys made every hallway a two-key chord.
+  // Chords now give you the screen cardinals instead. The STICK stays
+  // screen-relative — a pointed thumb means "go where I'm pointing".
+  let wx = (heldRight() ? 1 : 0) - (heldLeft() ? 1 : 0);
+  let wy = (heldDown() ? 1 : 0) - (heldUp() ? 1 : 0);
+  let mag = 1;
+  if (!wx && !wy && mazeStick) {
+    const sm = Math.hypot(mazeStick.dx, mazeStick.dy);
+    if (sm > 0.18) {
+      const d = screenDirToWorld(mazeStick.dx, mazeStick.dy);
+      wx = d.x; wy = d.y;
+      mag = Math.min(1, sm);
+    }
   }
-  if ((sx || sy) && P.rooted <= 0) {
-    const d = screenDirToWorld(sx, sy);
-    const mag = Math.min(1, Math.hypot(sx, sy));
-    tryMove(mz, P, d.x * MAZE_SPEED * mag * dt, d.y * MAZE_SPEED * mag * dt);
-    if (Math.abs(sx) > 0.2) P.fx = Math.sign(sx);
+  if ((wx || wy) && P.rooted <= 0) {
+    const len = Math.hypot(wx, wy) || 1;
+    tryMove(mz, P, (wx / len) * MAZE_SPEED * mag * dt, (wy / len) * MAZE_SPEED * mag * dt);
+    const sdx = wx - wy;                 // the motion's SCREEN x, for facing
+    if (Math.abs(sdx) > 0.2) P.fx = Math.sign(sdx);
     P.walk += dt * 10;
   }
 

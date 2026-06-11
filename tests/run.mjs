@@ -429,7 +429,29 @@ test('maze movement: walls stop you; diagonals slide along them', (G) => {
   assert.ok(q.y < 1.75, 'held by the wall');
 });
 
-test('maze: screen-relative movement maps to iso world directions', (G) => {
+test('maze keys are grid-aligned: one arrow walks one corridor', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.enterMaze();
+  const mz = G.game.maze;
+  mz.spiders = []; mz.spitters = []; mz.spawnTimer = 999;
+  const P = mz.player;
+  // park in an open room so walls don't interfere
+  for (let y = 3; y < 6; y++) for (let x = 3; x < 6; x++) mz.grid[y][x] = 0;
+  P.x = 4.5; P.y = 4.5;
+  // a single → must walk PURELY along world +x (one corridor, no drift)
+  G.keys.add('arrowright'); G.step(30); G.keys.delete('arrowright');
+  assert.ok(P.x > 5.0, `moved along +x (x=${P.x.toFixed(2)})`);
+  assert.ok(Math.abs(P.y - 4.5) < 1e-6, `no drift off the corridor (y=${P.y.toFixed(4)})`);
+  // the ↑+→ chord is the screen-right cardinal: +x and −y in equal measure
+  // (a short walk, so the room's walls never clamp one axis and skew it)
+  P.x = 4.5; P.y = 4.5;
+  G.keys.add('arrowup'); G.keys.add('arrowright'); G.step(12);
+  G.keys.delete('arrowup'); G.keys.delete('arrowright');
+  assert.ok(P.x > 4.6 && P.y < 4.4, 'chord moves diagonally in world terms');
+  assert.ok(Math.abs((P.x - 4.5) + (P.y - 4.5)) < 1e-6, 'x gained equals y lost — pure screen-right');
+});
+
+test('maze: the analog stick stays screen-relative (iso direction mapping)', (G) => {
   const up = G.screenDirToWorld(0, -1);
   assert.ok(up.x < -0.6 && up.y < -0.6, 'screen-up walks into the far corner');
   const right = G.screenDirToWorld(1, 0);

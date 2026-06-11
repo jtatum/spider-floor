@@ -60,7 +60,7 @@ const HINTS = {
   PAUSED:   'PAUSED · tap or click an option · P resume',
   TITLE:    'SPACE clock in · W workshop · A achievements · M sound',
   PLAYING:  '↑/↓ crank · SPACE doors · P pause · hold R abandon run',
-  MAZE:     'WASD/arrows or drag to move · the sword swings itself · find the other lift',
+  MAZE:     'arrows walk the corridors · the sword swings itself · find the other lift',
   BOSS:     '↑/↓ crank · ram it when it drops · dodge the red',
   SHOP:     'F fuse · Z/X specials · R restock · ENTER start',
   LEVELUP:  '1-9 pick · R reroll · B banish · S skip (+2◆)',
