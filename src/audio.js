@@ -161,6 +161,34 @@ const sfx = (() => {
     }).catch(() => {});                  // a missing/undecodable file just stays silent
   }
 
+  // Warm every track's COMPRESSED bytes into the HTTP cache during idle, so no
+  // screen ever starts silent waiting on a network fetch. We deliberately do NOT
+  // decode here — a decoded buffer is ~0.37 MB/sec of RAM (the eight tracks would
+  // be ~270 MB), whereas the compressed files total only ~10 MB. Decode still
+  // happens on demand in load() (fast, and now from cache). No AudioContext
+  // needed, so this can run even before the first gesture (warms the title too).
+  let prefetchStarted = false;
+  function prefetchAll() {
+    if (prefetchStarted) return;
+    prefetchStarted = true;
+    if (typeof fetch === 'undefined') return;
+    if (typeof navigator !== 'undefined' && navigator.connection && navigator.connection.saveData) return;
+    // ordered by when each screen is first likely reached
+    const order = ['title', 'gameplay', 'levelup', 'shop', 'spider', 'boss', 'fired', 'victory'];
+    const names = order.filter(n => MUSIC[n] && !bufCache[n]);
+    const idle = (typeof window !== 'undefined' && window.requestIdleCallback)
+      ? (cb) => window.requestIdleCallback(cb, { timeout: 3000 })
+      : (cb) => setTimeout(cb, 300);
+    let i = 0;
+    const step = () => {
+      if (i >= names.length) return;
+      const url = pickUrl(MUSIC[names[i++]].base);
+      // read the body so the whole file lands in cache, then discard it (no RAM kept)
+      fetch(url).then(r => r.arrayBuffer()).catch(() => {}).then(() => idle(step));
+    };
+    idle(step);                       // one file at a time, yielding between
+  }
+
   function tone(freq, dur, type = 'square', vol = 0.5, slideTo = null) {
     if (!ac || muted) return;
     const t = ac.currentTime;
@@ -174,7 +202,7 @@ const sfx = (() => {
     o.start(t); o.stop(t + dur + 0.02);
   }
   return {
-    resume, setMuted, setMotor, music,
+    resume, setMuted, setMotor, music, prefetchAll,
     creak() { tone(170 + Math.random() * 70, 0.13, 'sawtooth', 0.12, 65 + Math.random() * 20); },
     ding()  { tone(880, 0.12, 'sine', 0.5); tone(1320, 0.16, 'sine', 0.3); },
     near()  { tone(1040, 0.05, 'sine', 0.25); },

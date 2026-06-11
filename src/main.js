@@ -41,6 +41,11 @@ const unlockAudio = () => {
 };
 for (const ev of ['pointerdown', 'keydown', 'touchstart']) window.addEventListener(ev, unlockAudio);
 
+// Once the page is fully loaded, warm the rest of the soundtrack's bytes into
+// cache on idle so no screen starts silent waiting on a fetch (see prefetchAll).
+if (document.readyState === 'complete') sfx.prefetchAll();
+else window.addEventListener('load', () => sfx.prefetchAll(), { once: true });
+
 // tab away mid-shift → the building waits for you
 window.addEventListener('blur', () => {
   if (!menu && game && (game.state === 'PLAYING' || game.state === 'SPIDER' || game.state === 'BOSS')) {
