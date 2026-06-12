@@ -771,15 +771,80 @@ test('the shop offers two rotating specials', (G) => {
   assert.notEqual(G.shop.offers[0].key, G.shop.offers[1].key, 'two distinct specials');
 });
 
-test('restocking the shelf costs parts, once per visit', (G) => {
+test('restocks escalate: 3, 6, 9… and reset each visit', (G) => {
   G.run = G.newRun(); G.startShift(); G.run.parts = 20; G.openShop();
-  G.rerollShop();                                  // paid restock
-  assert.equal(G.run.parts, 17, 'restock costs 3');
-  G.rerollShop();                                  // refused — already used
-  assert.equal(G.run.parts, 17, 'no second charge');
-  G.openShop();                                    // a fresh visit resets the allowance
   G.rerollShop();
-  assert.equal(G.run.parts, 14, 'next visit may pay again');
+  assert.equal(G.run.parts, 17, 'first restock costs 3');
+  G.rerollShop();
+  assert.equal(G.run.parts, 11, 'second costs 6');
+  G.rerollShop();
+  assert.equal(G.run.parts, 2, 'third costs 9');
+  G.rerollShop();                                  // fourth wants 12 — too poor
+  assert.equal(G.run.parts, 2, 'refused when you cannot pay');
+  G.openShop();
+  G.run.parts = 10;
+  G.rerollShop();
+  assert.equal(G.run.parts, 7, 'a fresh visit starts the ladder back at 3');
+});
+
+test('fuses get pricier the more you hoard: 6, 8, 10…', (G) => {
+  G.run = G.newRun(); G.startShift(); G.run.parts = 30; G.openShop();
+  G.buyFuse();
+  assert.equal(G.run.parts, 24, 'first fuse costs 6');
+  G.buyFuse();
+  assert.equal(G.run.parts, 16, 'second costs 8 (one in stock)');
+  G.buyFuse();
+  assert.equal(G.run.parts, 6, 'third costs 10');
+  assert.equal(G.run.fuses, 3);
+  G.startShift();        // the spend lands in the shop record here
+  const shopRec = G.metricsAll().filter(r => r.type === 'shop').at(-1);
+  assert.equal(shopRec.spent, 24, 'the shop visit recorded its spend');
+  assert.equal(shopRec.fuses, 3);
+});
+
+test('house fittings: Workshop pre-installs never occupy your racks', (G) => {
+  G.save.stars = 100;
+  buyMeta(G, 'footInDoor'); buyMeta(G, 'footInDoor'); buyMeta(G, 'footInDoor');
+  G.run = G.newRun(); G.startShift();
+  assert.equal(G.run.up.floorCounter, 1, 'pre-fitted');
+  assert.ok(G.isHouse('floorCounter') && G.isHouse('fastDoors') && G.isHouse('autoLevel'),
+    'all three marked as house fittings');
+  assert.equal(G.slotsUsed('fitting'), 0, 'racks are EMPTY — the building owns these');
+  const newFittings = G.eligibleUpgrades().filter(u => u.kind === 'fitting' && G.run.up[u.key] === 0);
+  assert.ok(newFittings.length >= 5, 'a full rack of fresh fittings is still on offer');
+  G.pickLevel(newFittings[0]);
+  assert.equal(G.slotsUsed('fitting'), 1, 'picks YOU make still take slots');
+});
+
+test('patience bonuses add, never multiply: the death-stack caps itself', (G) => {
+  G.run = G.newRun('vera'); G.run.up.cushions = 3; G.run.up.coffee = 2; G.run.up.muzak = 2;
+  G.startShift();
+  const m = G.game.m;
+  assert.ok(Math.abs(m.patWaitMul - 1.95) < 1e-9, `wait stack is 1+.45+.35+.15 (got ${m.patWaitMul})`);
+  assert.ok(Math.abs(m.patRideMul - 1.95) < 1e-9, 'ride stack likewise');
+  // and a single purchase is still felt at face value
+  G.run = G.newRun('sal'); G.run.up.coffee = 1; G.startShift();
+  assert.ok(Math.abs(G.game.m.patWaitMul - 1.2) < 1e-9, 'one coffee = +20%, as the blurb says');
+});
+
+test('boss brood: a fast car squishes them; only slow contact hurts', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.enterBoss();
+  const bg = G.game.bossGame; bg.intro = 0;
+  bg.sState = 'wind'; bg.sTimer = 99;             // keep the boss out of the way
+  const C = bg.car;
+  // fast pass: the mini dies, the car doesn't
+  bg.minis = [{ x: 450, y: C.y - 10, vy: 0, r: 10, sway: 0 }];
+  C.v = 300; C.invuln = 0;
+  const hp = C.hp;
+  G.update(1 / 60);
+  assert.equal(C.hp, hp, 'no damage at speed');
+  assert.ok(bg.minis.length === 0 || bg.minis[0].y > 700, 'the mini was squished');
+  // slow contact: it bites
+  bg.minis = [{ x: 450, y: C.y - 10, vy: 0, r: 10, sway: 0 }];
+  C.v = 0; C.invuln = 0;
+  G.update(1 / 60);
+  assert.equal(C.hp, hp - 1, 'parked cars get bitten');
 });
 
 test('banish strikes a part from the run and refills the choices', (G) => {
