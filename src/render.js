@@ -411,7 +411,8 @@ function drawFx() {
     const k = f.life / f.max;
     ctx.globalAlpha = Math.max(0, 1 - k);
     ctx.fillStyle = f.color;
-    ctx.font = `bold ${15 + (1 - k) * 5}px ui-monospace`;
+    const base = touchEnabled ? 19 : 15;                 // phone-legible fare pops
+    ctx.font = `bold ${base + (1 - k) * 6}px ui-monospace`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(f.text, f.x, f.y);
   }
@@ -918,7 +919,8 @@ function drawPassenger(p, x, footY, mode) {
     ctx.fillRect(x - 5, fy - 49, 10, 6);
   }
 
-  // floor tag
+  // floor tag — the memory game's whole interface, so on phones (0.4x scale)
+  // it renders bigger: an 11px tag is ~4 physical px on a portrait phone
   const m = game.m;
   const destLabel = (game.floors[p.dest] || { label: '?' }).label;
   let txt;
@@ -928,33 +930,40 @@ function drawPassenger(p, x, footY, mode) {
     txt = remembered ? destLabel : '?';
   }
   const fading = mode === 'riding' && !m.dispatch && game.power.xray <= 0 && p.reveal > 0 && p.reveal < 1;
+  const tw2 = touchEnabled ? 18 : 13, th = touchEnabled ? 19 : 14;   // tag half-width / height
+  const ty = touchEnabled ? fy - 70 : fy - 64;
   ctx.globalAlpha = fading ? Math.max(0.35, p.reveal) : 1;
   ctx.fillStyle = '#1a1410';
-  ctx.fillRect(x - 13, fy - 64, 26, 14);
+  ctx.fillRect(x - tw2, ty, tw2 * 2, th);
   ctx.strokeStyle = txt === '?' ? '#6a5030' : '#bfa45f';
-  ctx.lineWidth = 1; ctx.strokeRect(x - 12.5, fy - 63.5, 25, 13);
+  ctx.lineWidth = 1; ctx.strokeRect(x - tw2 + 0.5, ty + 0.5, tw2 * 2 - 1, th - 1);
   ctx.fillStyle = txt === '?' ? '#6a5030' : '#bfa45f';
-  ctx.font = 'bold 11px ui-monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(txt, x, fy - 57);
+  ctx.font = touchEnabled ? 'bold 15px ui-monospace' : 'bold 11px ui-monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(txt, x, ty + th / 2);
   ctx.globalAlpha = 1;
 
   // patience bar
   const pct = Math.max(0, p.patience / p.patienceMax);
   if (mode === 'waiting' || mode === 'riding') {
+    const bh = touchEnabled ? 5 : 4;
     ctx.fillStyle = '#2a201a';
-    ctx.fillRect(x - 13, fy - 71, 26, 4);
+    ctx.fillRect(x - tw2, ty - bh - 3, tw2 * 2, bh);
     ctx.fillStyle = pct > 0.5 ? '#7aaa55' : pct > 0.25 ? '#d4a050' : '#aa3a32';
-    ctx.fillRect(x - 13, fy - 71, 26 * pct, 4);
+    ctx.fillRect(x - tw2, ty - bh - 3, tw2 * 2 * pct, bh);
   }
 
-  // the boarding SHOUT — a real speech bubble, impossible to miss
+  // the boarding SHOUT — a real speech bubble, impossible to miss.
+  // On touch the whole bubble renders half again as big: this number is the
+  // one thing the player MUST read, and phones see it at ~0.4x scale.
   if (mode === 'riding' && p.shoutT > 0) {
     const a = Math.min(1, p.shoutT / 0.35);              // fade out at the end
     const pop = 1 + Math.max(0, (p.shoutT - 1.25) * 2.4); // a brief pop on arrival
+    const big = touchEnabled ? 1.5 : 1;
     ctx.save();
     ctx.globalAlpha = a;
-    ctx.translate(x, fy - 88);
-    ctx.scale(pop, pop);
+    ctx.translate(x, fy - (touchEnabled ? 100 : 88));
+    ctx.scale(pop * big, pop * big);
     const txt = `${destLabel}!`;
     ctx.font = 'bold 14px ui-monospace';
     const bw = ctx.measureText(txt).width + 16;
@@ -1078,7 +1087,8 @@ function drawBanner() {
   ctx.save();
   ctx.globalAlpha = a;
   ctx.fillStyle = game.banner.color;
-  ctx.font = 'bold 20px ui-monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = touchEnabled ? 'bold 26px ui-monospace' : 'bold 20px ui-monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(game.banner.text, W / 2, 70);
   ctx.restore();
 }
