@@ -114,6 +114,9 @@ Open follow-ups:
 - [ ] **More building events** — flooded floor, stuck celebrity, rival operator…
       the Spider Floor taught players to expect a haunted building; deliver a
       second ghost.
+- [ ] **Gate the X dev shortcut** before sharing the link — it ships enabled on
+      the title, silently starts a run, and bumps real spiderVisits/achievements.
+      (Keep it behind e.g. `?dev` or a triple-tap; it's too useful to delete.)
 - [ ] **Landmark language ideas from the audit** — a NEW IN TOWN modifier where
       riders shout the LANDMARK not the number ('the cat floor!'); replace two of
       the three same-shape colored doors (red/blue/green) with distinct fixtures.
