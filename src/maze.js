@@ -173,6 +173,7 @@ function enterMaze() {
     result: null, exitT: 0,
   };
   save.stats.spiderVisits++; checkAchievements();
+  mazeStick = null;          // no stick survives between visits
   game.state = 'MAZE';
   sfx.spider();
 }
@@ -288,7 +289,11 @@ function updateMaze(dt) {
     if (sm > 0.18) {
       const d = screenDirToWorld(mazeStick.dx, mazeStick.dy);
       wx = d.x; wy = d.y;
-      mag = Math.min(1, sm);
+      // Response curve: full speed by 75% deflection. mag = min(1, sm) made a
+      // typical thumb (~0.85) walk 2.89 t/s vs the swarm's 3.3 cap — headless
+      // playtests measured 72% deaths under pressure vs keyboard's 59%; this
+      // curve restores exact parity while keeping slow micro-moves near center.
+      mag = Math.min(1, Math.max(0, (sm - 0.15) / 0.6));
     }
   }
   if ((wx || wy) && P.rooted <= 0) {
@@ -430,6 +435,13 @@ function updateMaze(dt) {
       };
       for (const s of mz.spiders) cleave(s, false);
       for (const sp of mz.spitters) cleave(sp, true);
+      // herding the flow-field until spiders bunch into one swing IS the skill —
+      // name it and pay it: +1 ◆ for every kill past the second
+      if (slain >= 3) {
+        const bonus = slain - 2;
+        mz.loot += bonus;
+        mazeFxText(mz, P.x, P.y - 0.6, `×${slain} CLEAVE +${bonus}`, '#8ae0ff');
+      }
       if (isCocoon) openCocoon(mz, tgt);
       else {
         // the wedge also cracks any cocoon it happens to pass through
@@ -469,6 +481,10 @@ let mazeStick = null;   // {id, ox, oy, dx, dy} — dx/dy normalized -1..1
 canvas.addEventListener('pointerdown', ev => {
   if (typeof touchEnabled === 'undefined' || !touchEnabled) return;
   if (!game || game.state !== 'MAZE' || paused) return;
+  // a second finger/palm must not steal the live stick mid-swarm — but only
+  // while its pointer still holds capture; a stick whose pointerup got lost
+  // may be reclaimed, or the walk would wedge until the visit ends
+  if (mazeStick && canvas.hasPointerCapture && canvas.hasPointerCapture(mazeStick.id)) return;
   const { mx, my } = canvasPos(ev);
   mazeStick = { id: ev.pointerId, ox: mx, oy: my, dx: 0, dy: 0 };
   try { canvas.setPointerCapture(ev.pointerId); } catch (e) {}
@@ -614,12 +630,7 @@ function drawMaze() {
   ctx.fillText('the door sealed behind you — find the other lift', W / 2, 58);
   const P = mz.player;
   ctx.textAlign = 'left';
-  for (let i = 0; i < P.maxHp; i++) {
-    ctx.fillStyle = i < P.hp ? '#ff4a6a' : '#3a2030';
-    ctx.font = 'bold 22px ui-monospace';
-    ctx.fillText('♥', 52, 28 + i * 0);   // single row below
-  }
-  // (hearts in a row)
+  ctx.font = 'bold 22px ui-monospace';
   for (let i = 0; i < P.maxHp; i++) {
     ctx.fillStyle = i < P.hp ? '#ff4a6a' : '#3a2030';
     ctx.fillText('♥', 52 + i * 24, 29);

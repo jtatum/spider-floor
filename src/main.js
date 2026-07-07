@@ -22,10 +22,11 @@ function loop(now) {
   lastT = now;
   update(dt);
   render();
-  // the motor hums with the car's speed — silent in menus and while paused
+  // the motor hums with the car's speed — silent in menus and while paused,
+  // and each Rebuilt Motor level makes the hum deeper and calmer
   const motorLevel = (!paused && game && game.state === 'PLAYING' && !menu)
     ? Math.abs(game.elev.v) / game.m.maxSpeed : 0;
-  sfx.setMotor(motorLevel);
+  sfx.setMotor(motorLevel, (typeof run !== 'undefined' && run && run.up) ? (run.up.motor || 0) : 0);
   // music follows the screen: the level-up jingle while you pick, and the shop
   // theme across the survived/parts-shop flow (same track → no restart between them)
   const st = menu || (game ? game.state : 'TITLE');
@@ -60,6 +61,10 @@ window.addEventListener('blur', () => {
   if (!menu && game && (game.state === 'PLAYING' || game.state === 'BOSS' || game.state === 'MAZE')) {
     setPaused(true);
   }
+  // the browser never delivers keyup for keys held across a tab switch — clear
+  // them or the car cranks itself on resume (touch re-asserts every frame, safe)
+  keys.clear();
+  sfx.setMotor(0);   // rAF stops in hidden tabs; don't leave the hum droning
 });
 
 // the hint line under the canvas follows the current screen
@@ -81,18 +86,40 @@ const HINTS = {
   FIRED:    'SPACE clock in again · W workshop',
   VICTORY:  'SPACE clock out',
 };
+// thumbs get their own dialect — no SPACE, no letter keys, nothing to hold
+const HINTS_TOUCH = {
+  PAUSED:   'PAUSED · tap an option to continue',
+  TITLE:    'tap CLOCK IN to start',
+  PLAYING:  '▲▼ crank · DOORS when level · ❚❚ pause',
+  MAZE:     'drag to walk · the sword swings itself',
+  BOSS:     '▲ ram it when it drops · ▼ retreat · dodge the red',
+  SHOP:     'tap the shelf · START SHIFT when ready',
+  LEVELUP:  'tap a card to install it',
+  WORKSHOP: 'tap a perk to buy it',
+  OPERATOR: 'tap an operator to clock in',
+  SETTINGS: 'drag the sliders',
+  ACH:      'tap BACK',
+  SHIFT_DONE: 'tap an option',
+  FIRED:    'tap to clock in again',
+  VICTORY:  'tap CLOCK OUT',
+};
 function updateHint() {
   if (!hintEl) return;
   const st = paused ? 'PAUSED' : (menu || (game ? game.state : 'TITLE'));
-  const text = HINTS[st] || HINTS.TITLE;
+  const table = touchEnabled ? HINTS_TOUCH : HINTS;
+  const text = table[st] || table.TITLE;
   if (text !== lastHint) { lastHint = text; hintEl.textContent = text; }
 }
 
 // fit canvas to viewport while keeping internal resolution
 function fit() {
   const pad = 16;
+  // budget for the frame's chrome (10px gap + hint line + canvas border) so a
+  // height-constrained layout (landscape phones) never overflows the viewport —
+  // overflow made the page scrollable, which let the browser steal stick drags
+  const chrome = 30;
   const sw = (window.innerWidth - pad) / W;
-  const shh = (window.innerHeight - pad) / H;
+  const shh = (window.innerHeight - pad - chrome) / H;
   const s = Math.min(sw, shh, 1.4);
   canvas.style.width = (W * s) + 'px';
   canvas.style.height = (H * s) + 'px';
@@ -115,13 +142,22 @@ function setupTouch() {
     el.addEventListener('pointerdown', e => {
       e.preventDefault(); sfx.resume();
       const key = el.dataset.key; if (!key) return;
+      // capture the pointer: a thumb drifting off the button mid-crank must not
+      // release the hold (pointerleave used to drop it — brutal while braking)
+      try { el.setPointerCapture(e.pointerId); } catch (err) {}
       if (el.dataset.mode === 'tap') handleKey(key); else keys.add(key);
       el.classList.add('on');
     });
     const release = e => { if (e) e.preventDefault(); const key = el.dataset.key; if (key) keys.delete(key); el.classList.remove('on'); };
     el.addEventListener('pointerup', release);
-    el.addEventListener('pointercancel', release);
-    el.addEventListener('pointerleave', release);
+    // a pointercancel means the OS claimed the touch (gesture nav, palm) — the
+    // hold is dropped through no fault of the thumb, so SAY so with a red flash
+    el.addEventListener('pointercancel', e => {
+      release(e);
+      el.classList.add('lost');
+      setTimeout(() => el.classList.remove('lost'), 260);
+    });
+    el.addEventListener('pointerleave', release);   // belt-and-braces; capture makes this rare
     // iOS synthesizes a double-tap "smart zoom" from rapid taps unless the
     // touch sequence is fully claimed — pointerdown preventDefault isn't enough
     el.addEventListener('touchend', e => e.preventDefault());

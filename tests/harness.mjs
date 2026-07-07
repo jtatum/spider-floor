@@ -38,7 +38,10 @@ const SHIM = `
   nearestFloorIdx, isAligned, doorsOpen, ridersAboard, slotsAboard, capacityNow,
   enterBoss, updateBoss, exitBoss, BOSS,
   genMaze, bfsDistances, tryMove, screenDirToWorld, enterMaze, finishMaze, updateMaze, mazeWalkable,
-  spawnMazeSpider, openCocoon,
+  spawnMazeSpider, openCocoon, MAZE_SPEED,
+  get mazeStick(){return mazeStick}, set mazeStick(v){mazeStick=v},
+  get touchEnabled(){return touchEnabled}, set touchEnabled(v){touchEnabled=v},
+  stopSpeedNow,
   metRecord, metricsAll, metricsSummary, cyr, wantsTinny,
 };
 `;

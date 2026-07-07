@@ -512,6 +512,7 @@ function newRun(opKey, heat) {
     theme: THEMES[Math.floor(Math.random() * THEMES.length)],
     seenModifiers: [],              // for variety: avoid repeating conditions back-to-back
     nextShift: {},                  // one-shot effects primed by shop "specials"
+    nextMods: null,                 // tomorrow's conditions, pre-rolled so the shop can forecast them
     maxedThisRun: 0,                // upgrades brought to max this run (for achievements)
   };
 }
@@ -566,7 +567,10 @@ function startShift() {
   const sp = shiftParams(run.shiftNum);
   const active = [];
   for (let i = 0; i < sp.floors; i++) active.push({ label: FLOOR_LABELS[i], acc: run.building[i] });
-  const modifiers = rollModifiers(run.shiftNum);
+  // conditions were pre-rolled at the end of the last shift (the shop posts a
+  // forecast, so specials become counterplay); first shift rolls fresh
+  const modifiers = run.nextMods || rollModifiers(run.shiftNum);
+  run.nextMods = null;
   const fx = combineFx(modifiers);
   const m = mods();
   const introT = modifiers.length ? 3.0 : 1.6;
@@ -668,6 +672,7 @@ function endShift(reason) {
     bumpStat('bestRunParts', run.parts);
     checkAchievements();
     persist();          // lifetime stats survive a closed tab, not just a firing
+    run.nextMods = rollModifiers(run.shiftNum + 1);   // roll tomorrow NOW — the shop reads the forecast
     game.state = 'SHIFT_DONE';
     game.doneT = 0;
     sfx.fanfare();

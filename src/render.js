@@ -306,7 +306,8 @@ function drawSettingsRows(inRun) {
   }
   ctx.fillStyle = '#7a6a4a'; ctx.font = '13px ui-monospace';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(inRun ? 'P or ESC to resume  ·  M mute' : 'ESC back  ·  M mute', W / 2, by + 14);
+  ctx.fillText(touchEnabled ? (inRun ? 'tap RESUME to keep working' : 'tap BACK when you\'re done')
+                            : (inRun ? 'P or ESC to resume  ·  M mute' : 'ESC back  ·  M mute'), W / 2, by + 14);
 }
 
 // in-run: the pause modal over the frozen game
@@ -328,13 +329,21 @@ function drawSettingsMenu() {
   drawSettingsRows(false);
 }
 
-// a small on-screen pause chip so touch can reach the modal at all
-function drawPauseChip(x, y) {
-  ctx.fillStyle = 'rgba(13,10,8,0.85)'; ctx.fillRect(x, y, 26, 26);
-  ctx.strokeStyle = '#7a6a4a'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, 25, 25);
+// the on-screen pause chip: touch's only route to the modal (and its sliders
+// and ABANDON), so on phones it must be a real target, not a 10-CSS-px dare.
+// `anchor: 'up'` grows the bigger touch chip upward from (x, y+26).
+function drawPauseChip(x, y, anchor) {
+  if (paused) return;                    // the modal draws its own buttons
+  const s = touchEnabled ? 44 : 26;
+  if (anchor === 'up') y -= s - 26;
+  ctx.fillStyle = 'rgba(13,10,8,0.85)'; ctx.fillRect(x, y, s, s);
+  ctx.strokeStyle = '#7a6a4a'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, s - 1, s - 1);
   ctx.fillStyle = '#bfa45f';
-  ctx.fillRect(x + 8, y + 7, 4, 12); ctx.fillRect(x + 15, y + 7, 4, 12);
-  buttons.push({ x, y, w: 26, h: 26, fn: () => setPaused(true) });
+  const bw = Math.round(s * 0.15), bh = Math.round(s * 0.46), inset = Math.round(s * 0.30), by = y + Math.round(s * 0.27);
+  ctx.fillRect(x + inset, by, bw, bh);
+  ctx.fillRect(x + s - inset - bw, by, bw, bh);
+  const pad = touchEnabled ? 14 : 0;     // generous invisible slop for thumbs
+  buttons.push({ x: x - pad, y: y - pad, w: s + pad * 2, h: s + pad * 2, fn: () => setPaused(true) });
 }
 
 // contextual nudges for a brand-new operator — only on shift 1 of a fresh profile
@@ -823,8 +832,14 @@ function drawCar() {
   const ok = isAligned() && isStopped();
   ctx.fillStyle = ok ? '#7aaa55' : '#aa3a32';
   ctx.beginPath(); ctx.arc(left + w - 12, top + 12, 4, 0, 7); ctx.fill();
-  ctx.strokeStyle = '#bfa45f'; ctx.lineWidth = 2;
+  // the readiness dot is ~1.6 physical px on a phone; when the landing is good,
+  // the whole car says so — stopping level is the game's core skill, it
+  // deserves feedback legible at any scale
+  if (ok) { ctx.save(); ctx.shadowColor = '#7aaa55'; ctx.shadowBlur = 12; ctx.strokeStyle = '#8fca6a'; }
+  else ctx.strokeStyle = '#bfa45f';
+  ctx.lineWidth = 2;
   ctx.strokeRect(left + 0.5, top + 0.5, w - 1, h - 1);
+  if (ok) ctx.restore();
 
   // Guidance Arrows: point toward the nearest floor a rider wants
   if (m.arrows) {
@@ -1039,7 +1054,10 @@ function drawHUD() {
     ctx.fillStyle = '#e0584a'; ctx.fillRect(W / 2 - 118, 108, 236 * k, 10);
   }
 
-  drawPauseChip(232, H - 28);   // tucked between the crank and door bars
+  // tucked between the crank and door bars — but drawHUD also serves LEVELUP /
+  // SHIFT_DONE / FIRED, where the pause modal can't render; an invisible chip
+  // there ate a tap and froze keyboard input until P was pressed twice
+  if (game.state === 'PLAYING') drawPauseChip(232, H - 28, 'up');
 
   // active shift conditions — small tags top-left, so you remember what's in play
   let my = 46;
@@ -1147,8 +1165,8 @@ function drawTitle() {
 
   ctx.fillStyle = '#bfa45f'; ctx.font = '15px ui-monospace';
   const lines = [
-    '↑ / ↓     crank the car up and down',
-    'SPACE     open / close the doors',
+    touchEnabled ? '▲ / ▼     crank the car up and down' : '↑ / ↓     crank the car up and down',
+    touchEnabled ? 'DOORS     open / close when stopped' : 'SPACE     open / close the doors',
     '',
     'Scoop riders from the LOBBY. They shout a floor —',
     'remember it, because once aboard it fades to "?".',
@@ -1175,7 +1193,9 @@ function drawTitle() {
              () => { menu = 'ACH'; }, false);
   drawButton('⚙', W / 2 + 310, H - 128, 46, 46, () => { menu = 'SETTINGS'; }, false);
   ctx.fillStyle = '#7a6a4a'; ctx.font = '11px ui-monospace'; ctx.textAlign = 'center';
-  ctx.fillText(`SPACE clock in    ·    W workshop    ·    A achievements    ·    S settings    ·    M sound ${save.muted ? 'OFF' : 'on'}`, W / 2, H - 64);
+  ctx.fillText(touchEnabled
+    ? `best with the sound on — ⚙ has the sliders    ·    sound ${save.muted ? 'OFF' : 'on'}`
+    : `SPACE clock in    ·    W workshop    ·    A achievements    ·    S settings    ·    M sound ${save.muted ? 'OFF' : 'on'}`, W / 2, H - 64);
 }
 
 function drawButton(label, x, y, w, h, fn, primary) {
@@ -1413,7 +1433,9 @@ function drawShiftDone() {
     drawButton('VISIT THE PARTS SHOP  ▸', W / 2 - 320, H / 2 + 80, 300, 46, openShop, true);
     drawButton('▲  CLIMB TO THE ROOF', W / 2 + 20, H / 2 + 80, 300, 46, enterBoss, false);
     ctx.fillStyle = '#9a5a6a'; ctx.font = 'italic 12px ui-monospace';
-    ctx.fillText('press C to face the spider that holds your lift — win or lose, the run ends', W / 2, H / 2 + 150);
+    ctx.fillText(touchEnabled
+      ? 'face the spider that holds your lift — win or lose, the run ends'
+      : 'press C to face the spider that holds your lift — win or lose, the run ends', W / 2, H / 2 + 150);
   } else {
     drawButton('VISIT THE PARTS SHOP  ▸', W / 2 - 150, H / 2 + 80, 300, 46, openShop, true);
   }
@@ -1423,16 +1445,31 @@ function drawFired() {
   ctx.fillStyle = 'rgba(13,10,8,0.9)'; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#aa3a32'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = 'bold 50px ui-monospace';
-  ctx.fillText(cyr(game.bossLost ? 'THE WEB WINS' : "YOU'RE FIRED"), W / 2, H / 2 - 70);
+  ctx.fillText(cyr(game.bossLost ? 'THE WEB WINS' : "YOU'RE FIRED"), W / 2, H / 2 - 88);
   ctx.fillStyle = '#bfa45f'; ctx.font = '18px ui-monospace';
   const survived = run.shiftNum - 1;
-  if (game.bossLost) ctx.fillText('the spider reels you back in. the lift still isn\'t yours.', W / 2, H / 2 - 24);
-  else ctx.fillText(`survived ${survived} shift${survived === 1 ? '' : 's'}  ·  ${run.totalDelivered} total deliveries`, W / 2, H / 2 - 24);
+  if (game.bossLost) ctx.fillText('the spider reels you back in. the lift still isn\'t yours.', W / 2, H / 2 - 44);
+  else ctx.fillText(`survived ${survived} shift${survived === 1 ? '' : 's'}  ·  ${run.totalDelivered} total deliveries`, W / 2, H / 2 - 44);
+  // what actually did it — a death should be legible, not just scored
+  if (!game.bossLost) {
+    const met = game.met || {};
+    const bits = [`${game.walkoffsThisShift} walk-off${game.walkoffsThisShift === 1 ? '' : 's'} on shift ${run.shiftNum}`];
+    if (met.fusesBurned) bits.push(`${met.fusesBurned} fuse${met.fusesBurned === 1 ? '' : 's'} blown first`);
+    if (met.closeCalls) bits.push(`${met.closeCalls} near-miss${met.closeCalls === 1 ? '' : 'es'}`);
+    ctx.fillStyle = '#9a6a5a'; ctx.font = 'italic 13px ui-monospace';
+    ctx.fillText(`what did it: ${bits.join('  ·  ')}`, W / 2, H / 2 - 18);
+  }
   const got = ACHIEVEMENTS.filter(a => save.ach[a.key]).length;
   ctx.fillStyle = '#ffd44a'; ctx.font = 'bold 20px ui-monospace';
   ctx.fillText(`★ ${save.stars} banked  ·  ${got}/${ACHIEVEMENTS.length} achievements`, W / 2, H / 2 + 12);
   ctx.fillStyle = '#7a6a4a'; ctx.font = '14px ui-monospace';
   ctx.fillText(`best: ${save.best.shifts} shifts  ·  ${save.best.delivered} deliveries`, W / 2, H / 2 + 44);
+  // the machine you died in, so next career starts with a plan instead of vibes
+  const owned = UPGRADES.filter(u => run.up[u.key] > 0)
+    .map(u => run.up[u.key] > 1 ? `${u.name} ${run.up[u.key]}` : u.name);
+  ctx.fillStyle = '#5a523e'; ctx.font = '12px ui-monospace';
+  ctx.fillText(owned.length ? `the machine: ${owned.join(' · ')}` : 'the machine: bone stock — maybe that was the problem',
+               W / 2, H / 2 + 150);
   drawButton('SPEND ★ IN WORKSHOP', W / 2 - 240, H / 2 + 80, 226, 46, () => { menu = 'WORKSHOP'; }, false);
   drawButton('CLOCK IN AGAIN', W / 2 + 14, H / 2 + 80, 226, 46, () => { menu = null; game.state = 'TITLE'; }, true);
 }
@@ -1467,7 +1504,7 @@ function drawOperatorSelect() {
       ctx.fillText(`${o.name} — ${o.epithet}`, x0 + 36, cy + 9);
       ctx.fillStyle = '#7a6a4a'; ctx.font = 'italic 11px ui-monospace';
       ctx.fillText(o.blurb, x0 + 36, cy + 29);
-      ctx.fillStyle = '#7adf9a'; ctx.font = '12px ui-monospace';
+      ctx.fillStyle = '#7adf9a'; ctx.font = touchEnabled ? '13px ui-monospace' : '12px ui-monospace';
       ctx.fillText(`+ ${o.buff}`, x0 + 36, cy + 48);
       ctx.fillStyle = '#e0584a';
       ctx.fillText(`− ${o.penalty}`, x0 + 36, cy + 65);
@@ -1509,12 +1546,16 @@ function drawOperatorSelect() {
     const desc = menuHeat === 0 ? 'a normal career — press H to turn up the heat'
       : HEAT.slice(0, menuHeat).map(h => h.name).join(' · ');
     ctx.fillText(desc, hx, hy);
-    buttons.push({ x: x0 - 4, y: hy - 12, w: cardW + 8, h: 24, fn: cycleHeat });
+    // a generous hit strip: the old 24px row was ~10 CSS px on a phone — the
+    // whole post-victory ladder was effectively locked for touch players
+    buttons.push({ x: x0 - 4, y: hy - 24, w: cardW + 8, h: 48, fn: cycleHeat });
   }
 
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#7a6a4a'; ctx.font = '12px ui-monospace';
-  ctx.fillText(`1-5 pick · SPACE clock in with your last crew${maxHeatUnlocked() > 0 ? ' · H heat' : ''} · ESC back`, W / 2, H - 70);
+  ctx.fillText(touchEnabled
+    ? `tap an operator to clock in${maxHeatUnlocked() > 0 ? ' · tap the flames for heat' : ''}`
+    : `1-5 pick · SPACE clock in with your last crew${maxHeatUnlocked() > 0 ? ' · H heat' : ''} · ESC back`, W / 2, H - 70);
   drawButton('◂  BACK', W / 2 - 110, H - 54, 220, 36, () => { menu = null; }, false);
 }
 
@@ -1556,8 +1597,8 @@ function drawWorkshop() {
       ctx.fillRect(cx + cardW - 12 - (m.max - l) * 11, cy + 9, 8, 6);
     }
 
-    ctx.fillStyle = '#8a8aa2'; ctx.font = '10.5px ui-monospace';
-    wrapText(m.blurb[Math.min(lvl, m.blurb.length - 1)], cx + 10, cy + 28, cardW - 20, 12);
+    ctx.fillStyle = '#8a8aa2'; ctx.font = touchEnabled ? '12px ui-monospace' : '10.5px ui-monospace';
+    wrapText(m.blurb[Math.min(lvl, m.blurb.length - 1)], cx + 10, cy + 28, cardW - 20, touchEnabled ? 13.5 : 12);
 
     ctx.font = 'bold 13px ui-monospace'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
     if (maxed) { ctx.fillStyle = '#7aaa55'; ctx.fillText('MAXED', cx + cardW - 10, cy + cardH - 8); }
@@ -1568,7 +1609,9 @@ function drawWorkshop() {
 
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#6a6a82'; ctx.font = '12px ui-monospace';
-  ctx.fillText('click a perk (or press 1–9, 0)  ·  A: achievements  ·  perks apply NEXT run', W / 2, H - 88);
+  ctx.fillText(touchEnabled
+    ? 'tap a perk to buy it  ·  perks apply NEXT run'
+    : 'click a perk (or press 1–9, 0)  ·  A: achievements  ·  perks apply NEXT run', W / 2, H - 88);
   drawButton('★  ACHIEVEMENTS', W / 2 - 230, H - 68, 220, 44, () => { menu = 'ACH'; }, false);
   drawButton('◂  BACK', W / 2 + 10, H - 68, 220, 44, () => { menu = null; }, true);
 }
@@ -1618,10 +1661,41 @@ function drawShop() {
   ctx.fillStyle = '#d4a050'; ctx.font = 'bold 20px ui-monospace';
   ctx.fillText(`◆ ${run.parts} parts`, W / 2, 100);
 
+  // ── tomorrow's forecast, posted on the depot wall — buy accordingly ──
+  // (conditions are pre-rolled at shift end, so the shelf becomes counterplay:
+  // espresso vs SHORT FUSES, a tip-off vs GRAVEYARD, a waiver vs a bad day)
+  const fc = run.nextMods;
+  if (fc && fc.length) {
+    const names = fc.map(md => {
+      const col = md.tone === 'good' ? '#7acf7a' : md.tone === 'bad' ? '#e0584a' : '#d8b24a';
+      return { text: md.name, col, desc: md.desc };
+    });
+    ctx.font = 'bold 14px ui-monospace';
+    ctx.fillStyle = '#8a7a5a';
+    const label = 'TOMORROW: ';
+    const joined = names.map(n => n.text).join('  +  ');
+    const lw = ctx.measureText(label).width, jw = ctx.measureText(joined).width;
+    let fx = W / 2 - (lw + jw) / 2;
+    ctx.textAlign = 'left';
+    ctx.fillText(label, fx, 126); fx += lw;
+    for (let i = 0; i < names.length; i++) {
+      const part = names[i].text + (i < names.length - 1 ? '  +  ' : '');
+      ctx.fillStyle = names[i].col;
+      ctx.fillText(part, fx, 126);
+      fx += ctx.measureText(part).width;
+    }
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#7a6a4a'; ctx.font = '11px ui-monospace';
+    ctx.fillText(names.map(n => n.desc).join('  ·  '), W / 2, 146);
+  } else {
+    ctx.fillStyle = '#6a7a5a'; ctx.font = 'italic 13px ui-monospace';
+    ctx.fillText('TOMORROW: a calm, ordinary day — probably', W / 2, 130);
+  }
+
   const totalW = 784, x0 = (W - totalW) / 2;
 
   // ── the rotating shelf: Spare Fuse + two one-shot specials ──
-  const shelfY = 148;
+  const shelfY = 176;
   const itemGap = 12, itemW = (totalW - 2 * itemGap) / 3, itemH = 64;
   ctx.fillStyle = '#6a6a4a'; ctx.font = '11px ui-monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
   ctx.fillText("TODAY'S SHELF", x0, shelfY - 6);
@@ -1639,7 +1713,8 @@ function drawShop() {
     ctx.fillStyle = afford ? '#d4a050' : '#5a4a32'; ctx.font = 'bold 12px ui-monospace';
     ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(it.key, ix + 10, shelfY + 8);
     ctx.fillStyle = '#d4a050'; ctx.font = 'bold 14px ui-monospace'; ctx.fillText(it.name, ix + 26, shelfY + 7);
-    ctx.fillStyle = '#9a8a64'; ctx.font = '11px ui-monospace'; wrapText(it.blurb, ix + 10, shelfY + 26, itemW - 20, 13);
+    ctx.fillStyle = '#9a8a64'; ctx.font = touchEnabled ? '12.5px ui-monospace' : '11px ui-monospace';
+    wrapText(it.blurb, ix + 10, shelfY + 26, itemW - 20, touchEnabled ? 14 : 13);
     ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.font = 'bold 13px ui-monospace';
     if (it.bought) { ctx.fillStyle = '#7aaa55'; ctx.fillText('SOLD', ix + itemW - 10, shelfY + itemH - 8); }
     else { ctx.fillStyle = afford ? '#d4a050' : '#7a5a3a'; ctx.fillText(`◆ ${it.cost}`, ix + itemW - 10, shelfY + itemH - 8); }
@@ -1655,7 +1730,9 @@ function drawShop() {
 
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#7a6a4a'; ctx.font = '12px ui-monospace';
-  ctx.fillText('click or press the key  ·  F fuse  ·  Z / X specials  ·  R restock', W / 2, H - 92);
+  ctx.fillText(touchEnabled
+    ? 'tap an item to buy it'
+    : 'click or press the key  ·  F fuse  ·  Z / X specials  ·  R restock', W / 2, H - 92);
   const nextQ = shiftParams(run.shiftNum + 1).quota;
   drawButton(`START SHIFT ${run.shiftNum + 1}  (quota ${nextQ})  ▸`,
              W / 2 - 170, H - 72, 340, 44, () => startShift(), true);
@@ -1748,8 +1825,9 @@ function drawLevelUp() {
       ctx.fillStyle = l < lvl ? '#7aaa55' : '#3a2e22';
       ctx.fillRect(x0 + cardW - 14 - (u.max - l) * 13, cy + 26, 9, 6);
     }
-    ctx.fillStyle = '#9a8a64'; ctx.font = '12px ui-monospace';
-    wrapText(u.blurb[Math.min(lvl, u.blurb.length - 1)], x0 + 36, cy + 46, cardW - 56, 14);
+    // phones read this at ~0.4x scale — the pick of the run deserves legible type
+    ctx.fillStyle = '#9a8a64'; ctx.font = touchEnabled ? '14px ui-monospace' : '12px ui-monospace';
+    wrapText(u.blurb[Math.min(lvl, u.blurb.length - 1)], x0 + 36, cy + 46, cardW - 56, touchEnabled ? 15 : 14);
     buttons.push({ x: x0, y: cy, w: cardW, h: cardH,
                    fn: () => lv.banishMode ? banishLevel(u) : pickLevel(u) });
   });
@@ -1766,7 +1844,7 @@ function drawLevelUp() {
 
   ctx.fillStyle = '#7a6a4a'; ctx.font = '12px ui-monospace';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('1-9 pick · R reroll · B banish · S skip', W / 2, rowY + 52);
+  ctx.fillText(touchEnabled ? 'tap a card to install it' : '1-9 pick · R reroll · B banish · S skip', W / 2, rowY + 52);
 }
 
 function wrapText(text, x, y, maxW, lh) {

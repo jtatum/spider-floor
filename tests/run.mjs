@@ -1044,5 +1044,161 @@ test('losing the boss ends the run in the web', (G) => {
   assert.equal(G.save.beatBoss, false, 'the cord is not cut on a loss');
 });
 
+// ── this session: mobile assists, confirmed-bug fixes, new polish ──────────
+
+test('hold-R keeps the heat rung (a heat-3 retry stays heat 3)', (G) => {
+  G.save.beatBoss = true; G.save.stats.heatCleared = 2;   // heat 3 unlocked
+  G.run = G.newRun('sal', 3); G.startShift();
+  assert.equal(G.run.heat, 3, 'run started at heat 3');
+  G.keys.add('r');
+  G.step(70);                                             // > 1s of holding R
+  assert.equal(G.game.state, 'PLAYING', 'a fresh shift started');
+  assert.equal(G.run.shiftNum, 1, 'the run restarted');
+  assert.equal(G.run.heat, 3, 'the heat rung survived the quick-restart');
+});
+
+test('winning the boss records the career in save.best', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.run.shiftNum = 7; G.run.totalDelivered = 55;
+  G.enterBoss();
+  const bg = G.game.bossGame; bg.intro = 0; bg.result = 'win';
+  G.step(160);                                            // resolve the exit
+  assert.equal(G.game.state, 'VICTORY');
+  assert.equal(G.save.best.shifts, 7, 'the winning run counts toward best shifts');
+  assert.equal(G.save.best.delivered, 55, 'and best deliveries');
+});
+
+test('Auto Doors never open themselves at the spider landing', (G) => {
+  G.run = G.newRun(); G.run.up.autoDoors = 1;
+  G.startShift();
+  G.game.passengers = [];
+  G.spawnPassenger();                                     // a lobby waiter (the bait)
+  const e = G.game.elev;
+  G.game.spider.open = true; G.game.spider.window = 99;
+  e.y = G.SPIDER_Y; e.v = 0; e.doors = 0; e.doorTarget = 0;
+  G.step(5);
+  assert.equal(e.doorTarget, 0, 'doors stay shut at the landing — entering is a choice');
+  assert.equal(G.game.state, 'PLAYING', 'not marched into the maze');
+  e.y = 0;                                                // control: at the real lobby…
+  G.step(5);
+  assert.equal(e.doorTarget, 1, '…auto doors still do their job');
+});
+
+test('tab-switch cannot strand a held key (blur clears the set)', (G) => {
+  // the fix lives in a window blur listener; headlessly we assert the core
+  // guarantee it relies on: clearing keys stops the crank next frame
+  G.run = G.newRun(); G.startShift();
+  const e = G.game.elev; e.doors = 0; e.doorTarget = 0;
+  G.keys.add('arrowup'); G.step(30);
+  assert.ok(e.v > 100, 'cranking');
+  G.keys.clear(); const v0 = e.v; G.step(60);
+  assert.ok(Math.abs(e.v) < v0, 'no phantom input after the clear — pure coast');
+});
+
+test('nervous riders lose patience on the base, never the trip allowance', (G) => {
+  G.run = G.newRun(); G.startShift();
+  const calm9 = G.ridePatFor(9, false), nerv9 = G.ridePatFor(9, true);
+  const calm0 = G.ridePatFor(0, false), nerv0 = G.ridePatFor(0, true);
+  assert.ok(nerv9 < calm9, 'nervous is still a squeeze');
+  assert.ok(Math.abs((calm9 - nerv9) - (calm0 - nerv0)) < 1e-9,
+    'the discount is a flat base cut — the per-floor budget is untouchable');
+  assert.ok(nerv9 / calm9 > 0.75, 'a long haul is no longer a provably-lost fare');
+});
+
+test('touch gets the measured lift assists; desktop physics untouched', (G) => {
+  G.run = G.newRun(); G.startShift();
+  assert.equal(G.stopSpeedNow(), G.CFG.stopSpeed, 'desktop stop window is stock');
+  G.touchEnabled = true;
+  assert.equal(G.stopSpeedNow(), G.CFG.stopSpeed + 5, 'touch widens the stop window');
+  // coast drag: crank to speed, release, coast 1s — touch sheds more speed
+  const coastRetained = () => {
+    const e = G.game.elev; e.y = 0; e.v = 0; e.doors = 0; e.doorTarget = 0;
+    G.keys.add('arrowup'); G.step(40); G.keys.delete('arrowup');
+    const v0 = e.v; G.step(60); const kept = e.v / v0;
+    e.v = 0; e.y = 0;
+    return kept;
+  };
+  const touchKept = coastRetained();
+  G.touchEnabled = false;
+  const deskKept = coastRetained();
+  assert.ok(touchKept < deskKept, `touch coasts less (${touchKept.toFixed(3)} vs ${deskKept.toFixed(3)})`);
+});
+
+test('maze stick reaches full speed at 75% deflection (measured parity curve)', (G) => {
+  G.run = G.newRun(); G.startShift(); G.enterMaze();
+  const mz = G.game.maze;
+  // an open field: this test is about the input curve, not the walls
+  for (let y = 1; y < mz.rows - 1; y++) for (let x = 1; x < mz.cols - 1; x++) mz.grid[y][x] = 0;
+  mz.spiders = []; mz.spitters = []; mz.cocoons = []; mz.globs = [];
+  mz.spawnTimer = 1e9; mz.exit = { x: 999, y: 999 };
+  const P = mz.player; P.x = mz.cols / 2; P.y = mz.rows / 2;
+  const runStick = (deflect) => {
+    P.x = mz.cols / 2; P.y = mz.rows / 2;
+    // screen-space "east": maps to a diagonal in world space; the open field
+    // doesn't care. dx is the deflection fraction of the stick radius.
+    G.mazeStick = { id: 1, ox: 0, oy: 0, dx: deflect, dy: 0 };
+    const x0 = P.x, y0 = P.y;
+    G.step(60);                                           // one second of walking
+    G.mazeStick = null;
+    return Math.hypot(P.x - x0, P.y - y0);
+  };
+  const dFull = runStick(1.0), d75 = runStick(0.75), d40 = runStick(0.4);
+  assert.ok(Math.abs(dFull - G.MAZE_SPEED) < 0.15, `full deflection walks at MAZE_SPEED (got ${dFull.toFixed(2)})`);
+  assert.ok(Math.abs(d75 - dFull) < 0.05, `75% deflection is already full speed (${d75.toFixed(2)} vs ${dFull.toFixed(2)})`);
+  assert.ok(d40 < dFull * 0.55, `fine control near the center survives (${d40.toFixed(2)})`);
+});
+
+test('the shop posts tomorrow\'s forecast, and the next shift honours it', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.game.delivered = G.game.quota;
+  G.update(1 / 60);                                       // quota met → SHIFT_DONE
+  assert.equal(G.game.state, 'SHIFT_DONE');
+  assert.ok(Array.isArray(G.run.nextMods), 'tomorrow was rolled at shift end');
+  const rush = G.MODIFIERS.find(m => m.key === 'rush');
+  G.run.nextMods = [rush];                                // pin the forecast
+  G.startShift();
+  assert.equal(G.game.modifiers[0] && G.game.modifiers[0].key, 'rush', 'the forecast came true');
+  assert.equal(G.run.nextMods, null, 'and was consumed');
+});
+
+test('a 3-kill cleave pays a herding bonus', (G) => {
+  G.run = G.newRun(); G.startShift(); G.enterMaze();
+  const mz = G.game.maze;
+  mz.spiders = []; mz.spitters = []; mz.spawnTimer = 1e9;
+  const P = mz.player;
+  for (let i = 0; i < 3; i++) {
+    mz.spiders.push({ x: P.x + 0.6 + i * 0.15, y: P.y + (i - 1) * 0.2,
+                      drop: 0, speed: 0, sway: 0, size: 10, dead: false, deadT: 0 });
+  }
+  mz.swingCool = 0; mz.loot = 0;
+  G.update(1 / 60);
+  assert.equal(mz.killed, 3, 'one swing, three spiders');
+  assert.equal(mz.loot, 3 * mz.lootPerKill + 1, 'loot includes +1 for the kill past the second');
+});
+
+test('the boss fight inherits the machine you built', (G) => {
+  G.run = G.newRun();
+  G.run.up.motor = 3; G.run.up.brakes = 2; G.run.up.reinforced = 1;
+  G.startShift();
+  G.enterBoss();
+  const bg = G.game.bossGame;
+  assert.ok(bg.maxV > G.BOSS.maxV, 'a rebuilt motor is faster on the roof too');
+  assert.ok(bg.brake > G.BOSS.brake, 'regen brakes bite up there too');
+  assert.equal(bg.car.maxHp, 5, 'a reinforced car is one more heart');
+});
+
+test('the spider floor rumbles ~8s before it opens — and only if it will open', (G) => {
+  G.run = G.newRun(); G.startShift(); G.startShift();     // shift 2: the floor may open
+  const sp = G.game.spider;
+  sp.cooldown = 4;                                        // inside the 8s window
+  G.update(1 / 60);
+  assert.ok(sp.rumble > 0.4, `the building stirs (rumble=${(sp.rumble || 0).toFixed(2)})`);
+  assert.ok(sp.glow > 0, 'the landing wakes faintly');
+  assert.ok(!sp.open, 'but the webs are not open yet');
+  G.game.delivered = G.game.quota - 1;                    // too late in the shift…
+  G.update(1 / 60);
+  assert.equal(sp.rumble, 0, '…so the building settles instead of teasing');
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

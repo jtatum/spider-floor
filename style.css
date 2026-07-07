@@ -9,6 +9,8 @@ html, body {
   justify-content: center;
   /* no double-tap zoom, no text selection on rapid taps — this is a game */
   touch-action: manipulation;
+  /* and no pull-to-refresh: a maze-stick drag must never reload the page */
+  overscroll-behavior: none;
   -webkit-user-select: none; user-select: none;
 }
 .frame {
@@ -22,7 +24,10 @@ canvas {
   border: 2px solid #3a2e22;
   border-radius: 4px;
   box-shadow: 0 0 60px rgba(191, 164, 95, 0.06);
-  touch-action: manipulation;   /* taps select menu cards; double-taps must not zoom */
+  /* none, not manipulation: the maze stick and settings sliders are pointer
+     drags on this element — the browser must never claim them as scrolls.
+     Taps still fire click events, so menu cards keep working. */
+  touch-action: none;
 }
 .hint {
   font-size: 12px;
@@ -49,14 +54,20 @@ canvas {
   z-index: 20;
 }
 .tbtn.on { background: rgba(110, 84, 54, 0.85); border-color: #ffd44a; }
-.tbtn.tL { left: 16px; }
-.tbtn.tR { left: 100px; }
-.tbtn.tB { right: 16px; }
+.tbtn.lost { border-color: #e0584a; background: rgba(120, 40, 34, 0.6); }  /* the OS stole the touch */
+/* ▲ stacked over ▼ on the left — the crank is a vertical axis, so the thumb
+   rocks along it; DOORS gets the reachable bottom-right corner. Side insets
+   keep the buttons off notches in landscape (viewport-fit=cover). */
+.tbtn.tL { left: max(16px, env(safe-area-inset-left));
+           bottom: calc(max(16px, env(safe-area-inset-bottom)) + 92px); }
+.tbtn.tR { left: max(16px, env(safe-area-inset-left)); }
+.tbtn.tB { right: max(16px, env(safe-area-inset-right)); }
 .tbtn.tA {
-  right: 100px;
+  right: max(16px, env(safe-area-inset-right));
   width: 104px; border-radius: 20px;
   font-size: 16px; letter-spacing: 0.05em;
 }
-@media (max-height: 460px) {            /* landscape phones: lift buttons higher */
+@media (max-height: 460px) {            /* landscape phones: hug the bottom edge */
   .tbtn { bottom: max(10px, env(safe-area-inset-bottom)); }
+  .tbtn.tL { bottom: calc(max(10px, env(safe-area-inset-bottom)) + 84px); }
 }

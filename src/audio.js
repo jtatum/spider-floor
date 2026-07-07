@@ -77,8 +77,10 @@ const sfx = (() => {
     if (musicBus) musicBus.gain.value = musicVol;
     if (sfxBus) sfxBus.gain.value = sfxVol;
   }
-  // called every frame with 0..1 = |speed| / maxSpeed (0 when idle/paused/menus)
-  function setMotor(level) {
+  // called every frame with 0..1 = |speed| / maxSpeed (0 when idle/paused/menus).
+  // `quality` is the Rebuilt Motor level (0-3): each rebuild makes the hum
+  // deeper, quieter, smoother — relief you can hear under everything else.
+  function setMotor(level, quality = 0) {
     if (!ac) return;
     if (!mOsc) {
       if (level <= 0.02) return;          // don't build the rig until it's needed
@@ -89,8 +91,8 @@ const sfx = (() => {
       mOsc.start();
     }
     const t = ac.currentTime;
-    mGain.gain.setTargetAtTime(Math.min(1, level) * 0.17, t, 0.07);
-    mOsc.frequency.setTargetAtTime(34 + level * 62, t, 0.07);
+    mGain.gain.setTargetAtTime(Math.min(1, level) * 0.17 * (1 - 0.13 * quality), t, 0.07);
+    mOsc.frequency.setTargetAtTime(34 - 3 * quality + level * (62 - 8 * quality), t, 0.07);
   }
 
   // ── music: decoded tracks that loop a region seamlessly (loopStart→loopEnd) ──
@@ -108,7 +110,9 @@ const sfx = (() => {
     // the victory song has lyrics — it plays ONCE, then hands off to a loop
     victory:  { base: 'audio/victory',  loop: false, then: 'levelup', gain: 0.55 },
   };
-  let musicGain = null, musicSrc = null, musicCur = null, musicReq = null, oneShotDone = null;
+  // each source gets ITS OWN gain node: fading the old track down and the new
+  // one up must be independent, or the crossfade turns into a click + a jump
+  let musicSrc = null, musicSrcGain = null, musicCur = null, musicReq = null, oneShotDone = null;
   // for resume-capable tracks (gameplay): remember where we left off so a brief
   // level-up detour doesn't restart the bed from its intro every time.
   let playName = null, playCfg = null, startedAt = 0, startOffset = 0;
@@ -136,15 +140,17 @@ const sfx = (() => {
   }
   function stopMusicSrc(fade = 0.5) {
     if (!musicSrc || !ac) return;
-    const t = ac.currentTime, src = musicSrc;
+    const t = ac.currentTime, src = musicSrc, g = musicSrcGain;
     if (playCfg && playCfg.resume && playName) {   // bank our spot so we can resume it
       resumeStore[playName] = posOf(playCfg, startedAt, startOffset, t);
     }
-    musicGain.gain.cancelScheduledValues(t);
-    musicGain.gain.setValueAtTime(musicGain.gain.value, t);
-    musicGain.gain.linearRampToValueAtTime(0.0001, t + fade);
+    if (g) {
+      g.gain.cancelScheduledValues(t);
+      g.gain.setValueAtTime(g.gain.value, t);
+      g.gain.linearRampToValueAtTime(0.0001, t + fade);
+    }
     try { src.stop(t + fade + 0.05); } catch (e) {}
-    musicSrc = null; playCfg = null; playName = null;
+    musicSrc = null; musicSrcGain = null; playCfg = null; playName = null;
   }
   // idempotent: pass a track name to ensure it's playing, or null to stop.
   // Called every frame by the main loop, so it doubles as the retry that starts
@@ -166,24 +172,24 @@ const sfx = (() => {
     if (!eff) { musicCur = null; stopMusicSrc(); return; }   // one-shot with no follow-up → silence
     if (eff === musicCur) return;        // already playing/queued the right track
     musicCur = eff;
-    if (!musicGain) { musicGain = ac.createGain(); musicGain.gain.value = 0; musicGain.connect(musicBus); }
     const cfg = MUSIC[eff];
     const looping = cfg.loop !== false;
     load(eff).then(buf => {
       if (musicReq !== eff) return;      // the screen changed while we were decoding
-      stopMusicSrc(0.08);
+      stopMusicSrc(0.08);                // fades the OLD source on its own gain
       const src = ac.createBufferSource();
       src.buffer = buf;
       src.loop = looping;
       if (looping) { src.loopStart = cfg.loopStart; src.loopEnd = Math.min(cfg.loopEnd, buf.duration); }
-      src.connect(musicGain);
+      const g = ac.createGain();
+      g.connect(musicBus);
+      src.connect(g);
       const t = ac.currentTime;
-      musicGain.gain.cancelScheduledValues(t);
-      musicGain.gain.setValueAtTime(0.0001, t);
-      musicGain.gain.linearRampToValueAtTime(cfg.gain, t + 0.4);   // gentle fade-in
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(cfg.gain, t + 0.4);   // gentle fade-in
       const offset = (cfg.resume && resumeStore[eff] != null) ? resumeStore[eff] : 0;
       src.start(0, offset);
-      musicSrc = src;
+      musicSrc = src; musicSrcGain = g;
       playCfg = cfg; playName = eff; startedAt = t; startOffset = offset;
       if (!looping) {                    // a one-shot: when it plays out, hand off
         src.onended = () => {
@@ -237,12 +243,19 @@ const sfx = (() => {
     resume, setMuted, setVolumes, setMotor, music, prefetchAll, setTinny,
     musicState: () => ({ track: musicCur, tinny }),   // debugging audio is hell without eyes
 
-    creak() { tone(170 + Math.random() * 70, 0.13, 'sawtooth', 0.12, 65 + Math.random() * 20); },
+    creak(vol = 1) { tone(170 + Math.random() * 70, 0.13, 'sawtooth', 0.12 * vol, 65 + Math.random() * 20); },
     ding()  { tone(880, 0.12, 'sine', 0.5); tone(1320, 0.16, 'sine', 0.3); },
     near()  { tone(1040, 0.05, 'sine', 0.25); },
     board() { tone(440, 0.07, 'square', 0.35, 560); },
     chime() { tone(660, 0.09, 'sine', 0.5); tone(990, 0.14, 'sine', 0.4, 1180); },
-    door()  { tone(160, 0.18, 'sawtooth', 0.25, 120); },
+    door()  {  // Quick Doors sound quicker: shorter scrape, higher pitch
+      const q = (typeof run !== 'undefined' && run && run.up) ? (run.up.fastDoors || 0) : 0;
+      tone(160 + 45 * q, 0.18 - 0.035 * q, 'sawtooth', 0.25, 120 + 30 * q);
+    },
+    rumble(k = 1) {  // the building stirring below the lobby — dust before the door
+      tone(46 + k * 10, 0.55, 'sine', 0.07 + 0.10 * k, 38);
+      tone(69 + k * 12, 0.4, 'triangle', 0.03 + 0.04 * k, 52);
+    },
     thud()  { tone(90, 0.14, 'sine', 0.6, 60); },
     buzz()  { tone(140, 0.22, 'sawtooth', 0.45, 80); },
     buy()   { tone(523, 0.08, 'square', 0.4); tone(784, 0.12, 'square', 0.4); },

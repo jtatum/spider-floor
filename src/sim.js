@@ -179,7 +179,7 @@ function handleKey(k) {
 function toggleDoors() {
   const e = game.elev;
   // Door Interlock: fumbling mid-travel is simply ignored instead of jamming
-  if (Math.abs(e.v) > CFG.stopSpeed) { if (game.m.interlock) return; jam(); return; }
+  if (Math.abs(e.v) > stopSpeedNow()) { if (game.m.interlock) return; jam(); return; }
   if (e.doorTarget === 0) {
     if (!isAligned()) { if (game.m.interlock) return; jam(); return; }
     e.doorTarget = 1;
@@ -200,14 +200,30 @@ function jam() {
 const buttons = [];   // {x,y,w,h,fn} rebuilt each render for clickable screens
 const sliders = [];   // {x,y,w,h,tx,tw,set} rebuilt each render (settings panel)
 function canvasPos(ev) {
+  // map against the CONTENT box: getBoundingClientRect includes the 2px border,
+  // which skewed every tap ~5 canvas px toward the top-left on phones
   const r = canvas.getBoundingClientRect();
-  return { mx: (ev.clientX - r.left) * (W / r.width), my: (ev.clientY - r.top) * (H / r.height) };
+  const cw = canvas.clientWidth || r.width, ch = canvas.clientHeight || r.height;
+  return { mx: (ev.clientX - r.left - (canvas.clientLeft || 0)) * (W / cw),
+           my: (ev.clientY - r.top - (canvas.clientTop || 0)) * (H / ch) };
 }
 canvas.addEventListener('click', ev => {
   sfx.resume();
   const { mx, my } = canvasPos(ev);
   for (const b of buttons) {
     if (mx >= b.x && mx <= b.x + b.w && my >= b.y && my <= b.y + b.h) { b.fn(); return; }
+  }
+  // touch slop: a 32px canvas button is ~13 CSS px on a phone. A near-miss
+  // (within 18 canvas px of an edge) snaps to the closest button.
+  if (typeof touchEnabled !== 'undefined' && touchEnabled) {
+    let best = null, bestD = 18;
+    for (const b of buttons) {
+      const dx = Math.max(b.x - mx, 0, mx - (b.x + b.w));
+      const dy = Math.max(b.y - my, 0, my - (b.y + b.h));
+      const d = Math.hypot(dx, dy);
+      if (d < bestD) { bestD = d; best = b; }
+    }
+    if (best) best.fn();
   }
 });
 // sliders are draggable: grab anywhere on the track, value follows the pointer
@@ -245,7 +261,14 @@ function isAligned() {
   const i = nearestFloorIdx(game.elev.y);
   return Math.abs(game.elev.y - i * CFG.floorHeight) < tol;
 }
-function isStopped() { return Math.abs(game.elev.v) < CFG.stopSpeed; }
+// Thumbs on glass can't feather: a 120ms minimum tap changes speed by ~57px/s
+// while the landing wants |v| < 22. Headless bot playtests measured touch trips
+// +27% slower than keyboard; widening the stop window (+ a touch more coast
+// drag in update) closed the gap to ~0% without moving desktop feel.
+function stopSpeedNow() {
+  return CFG.stopSpeed + (typeof touchEnabled !== 'undefined' && touchEnabled ? 5 : 0);
+}
+function isStopped() { return Math.abs(game.elev.v) < stopSpeedNow(); }
 function doorsOpen() { return game.elev.doors > 0.92; }
 function flash(color, t = 0.25) { game.flash = { color, t, max: t }; }
 function shake(amt) { game.shake = Math.max(game.shake, amt); }
@@ -285,13 +308,16 @@ function updateFx(dt) {
   }
 }
 
-// patience scales with the trip being asked for — a hop is not a haul
+// patience scales with the trip being asked for — a hop is not a haul.
+// The nervous discount hits the BASE only, never the per-floor term: shaving
+// the trip allowance made a nervous rider bound for the top provably
+// undeliverable as last-in-batch from shift 6 on (their clock < the physics).
 function heatPatMul() { return runHeat() >= 4 ? 0.88 : 1; }   // NO LOITERING
-function waitPat(dist) {
-  return (CFG.patienceTime + CFG.patPerFloor * dist) * game.m.patWaitMul * game.patMul * heatPatMul();
+function waitPat(dist, nervous) {
+  return (CFG.patienceTime * (nervous ? 0.6 : 1) + CFG.patPerFloor * dist) * game.m.patWaitMul * game.patMul * heatPatMul();
 }
-function ridePatFor(dist) {
-  return (CFG.ridePatience + CFG.ridePatPerFloor * dist) * game.m.patRideMul * game.patMul * heatPatMul();
+function ridePatFor(dist, nervous) {
+  return (CFG.ridePatience * (nervous ? 0.6 : 1) + CFG.ridePatPerFloor * dist) * game.m.patRideMul * game.patMul * heatPatMul();
 }
 
 function spawnPassenger(origin = 0) {
@@ -320,8 +346,7 @@ function spawnPassenger(origin = 0) {
   let r = Math.random() * total, kind = 'normal';
   for (const k in weights) { r -= weights[k]; if (r <= 0) { kind = k; break; } }
 
-  let pat = waitPat(Math.abs(dest - origin));
-  if (kind === 'nervous') pat *= 0.6;
+  const pat = waitPat(Math.abs(dest - origin), kind === 'nervous');
   game.passengers.push({
     id: game.nextId++,
     origin,
@@ -362,19 +387,32 @@ function update(dt) {
   // hold R to abandon the run — a tap does nothing, so no fat-fingered wipes
   if (keys.has('r')) {
     game.abandonT = (game.abandonT || 0) + dt;
-    if (game.abandonT >= 1.0) { keys.delete('r'); metRunRecord('abandoned'); run = newRun(run.operator); startShift(); return; }
+    if (game.abandonT >= 1.0) { keys.delete('r'); metRunRecord('abandoned'); run = newRun(run.operator, run.heat); startShift(); return; }
   } else game.abandonT = 0;
   if (game.introT > 0) game.introT = Math.max(0, game.introT - dt);
   const e = game.elev;
   const m = game.m;
 
-  // ── Spider Floor: opens for a window, then the webs recede ──
+  // ── Spider Floor: the building stirs, then opens for a window, then the webs recede ──
   const sp = game.spider;
   if (sp.glow > 0 && !sp.open) sp.glow = Math.max(0, sp.glow - dt);
   if (!sp.open && !sp.used) {
     sp.cooldown -= dt;
-    if (sp.cooldown <= 0 && (run.shiftNum >= 2 || game.fx.forceSpider) && game.delivered < game.quota - 1) {
-      sp.open = true; sp.window = 13;
+    const willOpen = (run.shiftNum >= 2 || game.fx.forceSpider) && game.delivered < game.quota - 1;
+    // ~8s of dust and low noise before the floor opens, so missing the window
+    // is a choice made mid-fare, not a dice roll (TODO's pre-opening rumble)
+    sp.rumble = willOpen ? Math.max(0, Math.min(1, (8 - sp.cooldown) / 8)) : 0;
+    if (sp.rumble > 0) {
+      sp.glow = Math.max(sp.glow, sp.rumble * 0.35);          // the landing wakes faintly
+      game.rumbleCool = (game.rumbleCool || 0) - dt;
+      if (game.rumbleCool <= 0) {
+        sfx.rumble(sp.rumble);
+        shake(0.8 + sp.rumble * 1.6);
+        game.rumbleCool = 1.5 - 0.7 * sp.rumble;
+      }
+    }
+    if (sp.cooldown <= 0 && willOpen) {
+      sp.open = true; sp.window = 13; sp.rumble = 0;
       game.banner = { text: '▓ THE SPIDER FLOOR IS OPEN — CRANK BELOW THE LOBBY ▓', t: 2.4, color: '#b46adc' };
       sfx.spider();
     }
@@ -412,16 +450,21 @@ function update(dt) {
     const braking = Math.sign(input) !== Math.sign(e.v) && Math.abs(e.v) > 1;
     const brakeA = m.brakeAccel * (game.brakeBoost || 1);
     e.v += input * (braking ? brakeA : accelE) * dt;
-    // hard reverse-cranking makes the cables complain
+    // hard reverse-cranking makes the cables complain — until you rebuild the
+    // brakes. Relief you can HEAR: Lv1 quiets the creak, Lv2 silences it.
     game.creakCool = Math.max(0, (game.creakCool || 0) - dt);
-    if (braking && Math.abs(e.v) > 140 && game.creakCool <= 0) {
-      sfx.creak();
+    const brakeLvl = run.up.brakes || 0;
+    if (braking && Math.abs(e.v) > 140 && game.creakCool <= 0 && brakeLvl < 2) {
+      sfx.creak(1 - 0.5 * brakeLvl);
       game.creakCool = 0.28 + Math.random() * 0.2;
     }
   } else {
     // no input: a heavy flywheel. Barely any drag, so momentum carries you —
     // letting go does NOT stop you. "SLIPPERY CABLES" makes it glide even more.
-    const baseCoast = game.m.coastFriction;   // Flywheel Damper lowers this (more drag)
+    // On touch, half a Flywheel Damper for free: measured (headless bot playtest)
+    // to cut the touch trip-time penalty from +27% to +8% vs keyboard.
+    const touchDrag = (typeof touchEnabled !== 'undefined' && touchEnabled) ? 0.002 : 0;
+    const baseCoast = game.m.coastFriction - touchDrag;   // Flywheel Damper lowers this (more drag)
     const coastF = baseCoast + (0.9994 - baseCoast) * game.fx.coast;
     e.v *= Math.pow(coastF, dt * 60);
     if (Math.abs(e.v) < CFG.settleBelow) e.v *= Math.pow(CFG.settleFriction, dt * 60);
@@ -500,7 +543,10 @@ function update(dt) {
   // Only hold for a waiting rider that can ACTUALLY board — otherwise a mover
   // that needs two slots but finds only one free would reopen the doors forever
   // (you'd press to close, auto-doors reopens, repeat: a soft-lock).
-  if (m.autoDoors && aligned && isStopped() && e.doorTarget === 0) {
+  // Never at the spider landing: nearestFloorIdx clamps it to the lobby, which
+  // would auto-open the doors down there and march you into the web unasked.
+  const atSpiderLanding = sp.open && Math.abs(e.y - SPIDER_Y) < CFG.floorHeight * 0.5;
+  if (m.autoDoors && aligned && isStopped() && e.doorTarget === 0 && !atSpiderLanding) {
     const wantsHere = game.passengers.some(p => p.state === 'riding' && p.dest === ci);
     const callJob = game.passengers.some(p => p.state === 'waiting' && p.origin === ci &&
                                               slotsAboard() + (p.size || 1) <= cap);
@@ -515,7 +561,7 @@ function update(dt) {
       p.state = 'riding';
       p.reveal = CFG.rememberTime;
       // patience resets to the ride pool, scaled by the trip still ahead
-      p.patience = ridePatFor(Math.abs(p.dest - ci)) * (p.kind === 'nervous' ? 0.6 : 1);
+      p.patience = ridePatFor(Math.abs(p.dest - ci), p.kind === 'nervous');
       p.patienceMax = p.patience;
       p.shoutT = 1.5;       // they SHOUT the floor as they step in — a speech bubble
       sfx.board();
@@ -753,11 +799,18 @@ function enterBoss() {
   game.state = 'BOSS';
   const hp = 6 + Math.floor((run.shiftNum - 1) / 3)    // scales a little with how far you got
            + (runHeat() >= 5 ? 2 : 0);                 // THE WEB REMEMBERS
+  // you bring THE MACHINE YOU BUILT to the roof: motor and brakes carry up the
+  // shaft, a reinforced car (or a union card) is one more heart in the web
+  const motorL = run.up.motor || 0, brakeL = run.up.brakes || 0;
+  const carHp = Math.min(6, 4 + (run.up.reinforced ? 1 : 0) + (save.meta.unionCard ? 1 : 0));
   game.bossGame = {
     t: 0, intro: 3.2, result: null, exitT: 0,
     sHp: hp, sMaxHp: hp, sY: BOSS.restY, sState: 'wind', sTimer: 1.6, sInvuln: 0, sShake: 0,
     attackKind: null, danger: null, sway: 0,
-    car: { y: (BOSS.carTop + BOSS.carBot) / 2, v: 0, hp: 4, maxHp: 4, invuln: 0, hitFlash: 0, webbed: 0 },
+    accel: BOSS.accel * (1 + 0.10 * motorL),
+    maxV:  BOSS.maxV  * (1 + 0.08 * motorL),
+    brake: BOSS.brake * (1 + 0.18 * brakeL) * (OP().brakeMul || 1),   // Vera never learned, even up here
+    car: { y: (BOSS.carTop + BOSS.carBot) / 2, v: 0, hp: carHp, maxHp: carHp, invuln: 0, hitFlash: 0, webbed: 0 },
     minis: [], fx: [], spaceWas: false,
   };
   sfx.spider();
@@ -793,9 +846,10 @@ function updateBoss(dt) {
   const grip = C.webbed > 0 ? 0.45 : 1;                     // web slows the crank
   if (input !== 0) {
     const braking = Math.sign(input) !== Math.sign(C.v) && Math.abs(C.v) > 1;
-    C.v += input * (braking ? BOSS.brake : BOSS.accel) * grip * dt;
+    C.v += input * (braking ? (bg.brake || BOSS.brake) : (bg.accel || BOSS.accel)) * grip * dt;
   } else { C.v *= Math.pow(BOSS.coast, dt * 60); if (Math.abs(C.v) < 3) C.v = 0; }
-  C.v = Math.max(-BOSS.maxV, Math.min(BOSS.maxV, C.v));
+  const mv = bg.maxV || BOSS.maxV;
+  C.v = Math.max(-mv, Math.min(mv, C.v));
   C.y += C.v * dt;
   if (C.y < BOSS.carTop) { C.y = BOSS.carTop; if (C.v < 0) C.v = 0; }
   if (C.y > BOSS.carBot) { C.y = BOSS.carBot; C.v = 0; }
@@ -872,6 +926,9 @@ function exitBoss() {
   if (bg.result === 'win') {
     save.stats.bossWins++;
     save.beatBoss = true;
+    // a victorious career is a full career — the roof shift counts, unlike a firing
+    save.best.shifts = Math.max(save.best.shifts, run.shiftNum);
+    save.best.delivered = Math.max(save.best.delivered, run.totalDelivered);
     bumpStat('heatCleared', run.heat || 0);   // climbing the ladder unlocks the next rung
     checkAchievements();          // Cut the Cord (+30★) and heat achievements fire here
     persist();

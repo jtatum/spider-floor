@@ -13,7 +13,23 @@ The working list. Roughly ordered within each section; strike things as they lan
       · screen-shake toggle · abandon run (two-tap confirm; the touch answer to
       hold-R). P/ESC or the ⏸ chip (drawn in PLAYING/SPIDER/BOSS) opens it.
       Settings persist in the save.
-- [ ] **Mobile: odds and ends** — bigger tap targets on workshop/achievement cards.
+- [x] **Mobile: "a hair too hard" — MEASURED and closed.** Headless bot playtests
+      (real update() loop, touch-modeled input: 160ms latency, 120ms min-hold):
+      lift trips were +27% slower on touch; maze stick at typical 0.85 thumb
+      deflection walked 2.89 t/s vs the swarm's 3.3 cap (72% deaths vs kbd 59%).
+      Shipped: stick response curve (full speed at 75% deflection — measured
+      exact keyboard parity), touch coast drag −0.002 + stop window +5 (measured
+      gap 27%→0%). Rejected BY MEASUREMENT: brake boost (made touch WORSE —
+      coarser tap quantum), maze spawn thinning (overshot easier than desktop).
+- [x] **Mobile: input reliability** — canvas `touch-action:none` +
+      `overscroll-behavior:none` (stick drags could pull-to-refresh the run away);
+      pointer capture on crank buttons (thumb drift no longer drops a hold, red
+      flash when the OS steals one); second finger can't hijack the maze stick;
+      44px pause chip + padded hit rects; tap-slop on small canvas buttons;
+      content-box tap mapping; ▲ stacked over ▼ (motion axis), DOORS bottom-right;
+      safe-area insets; touch-specific hint lines + bigger card text.
+- [x] **Mobile: odds and ends** — heat dial got a real hit strip; workshop/levelup/
+      shop blurbs render bigger on touch. (Achievement cards stay small — display-only.)
 
 ## The Spider Floor v2: the webbed office (isometric maze)
 
@@ -50,23 +66,59 @@ Open follow-ups:
 - [ ] **Balance the visit curve with human hands** — flood pacing
       (spawnEvery 2.6 − t·0.022, floor 0.55s), sword (range 1.55 / cd 0.55 / wedge),
       cocoon odds (62/23/15), spitter cadence. Tuned by arithmetic so far.
-- [ ] **Pre-opening rumble** — ~8s of dust + low noise before the floor opens, so
-      missing the window is a choice, not a dice roll.
+- [x] **Pre-opening rumble** — shipped: ~8s buildup (faint landing glow, low
+      rumble tone, tremor ticks) before the floor opens; the building settles
+      quietly if the shift is too far gone to open at all.
+- [x] **Multi-cleave callout** — ×N CLEAVE +◆ for 3+ kills in one swing; the
+      herding skill is now named and paid.
 - [ ] Consider: gate the roof on sawThread instead of spiderVisits ≥ 1 (the fiction
       wants it; the pacing implications need James's playtest verdict).
 - [ ] (Deliberately NOT adding spider-floor-only upgrades to the level-up pool —
       dead cards 90% of a shift.)
+- [ ] **AUDIT FINDING (needs James's verdict): the Spider Floor is strictly
+      dominant** — update() freezes ALL shift patience during MAZE, loot/kill is
+      flat, so never-skip is correct and a long farm out-earns the day job ~5x.
+      Candidate fixes: waiting patience keeps draining at ~30% inside; loot decay
+      after ~35s; cap paid kills per visit. Deliberately NOT changed this session.
 
 ## Later
 
 - [ ] **Balance playtest pass (human hands)** — XP curve (`xpBase`/`xpGrowth`),
       down-spawn cadence (×2.6), heat rung tuning, late-shift quota slog
       (`6 + n*2.2` vs. patience squeeze — shift 10 may be a grind, not a crescendo).
+      THE AUDIT DID THE ARITHMETIC (2026-07, multi-agent + queue sims) — verdicts
+      wanted on four findings, none changed in code yet:
+      · **Shift 5 cliff**: base-stat throughput ceiling (~13.5-16 deliveries/min)
+        < arrivals (20.7/min) — 60-seed sim survival 100/100/93/53/0% for shifts
+        1-5 without move/door/cargo cards. A TAS fails shift 6. Softer ramp
+        (spawn 4.8 − 0.28n, floor 1.9) or guarantee a throughput card early.
+      · **Shift 9-10 flatline**: patMul and spawn both hit their floors there;
+        only quota keeps growing → same pressure, longer shifts. Cap quota ~25
+        and scale intensity (rush waves / second modifier) instead of length.
+      · **Level-up heartbeat slows ~5x** by shift 8 (17s → 69-124s per pick).
+        Fiction-friendly fix: XP scales with trip distance (a penthouse haul
+        teaches more than a hop).
+      · **Heat rungs 2+3+4 all attack strikes** and stack multiplicatively; the
+        ladder narrows onto one resource. Re-denominate rung 3 as economic?
+      (Fixed outright this session: nervous riders' 0.6× now cuts the patience
+      BASE only, not the per-floor trip budget — long-haul nervous riders were
+      provably undeliverable as last-in-batch from shift 6.)
 - [ ] **Daily seeded run** — needs a seeded RNG plumbed through `shuffle`/spawns;
       shareable "today's building" + local best. The web build's retention hook.
 - [ ] **Victory-song subtitles** — the lyrics deserve timed captions; build the
       track-studio page (loop-point finder + lyric timing) as the tool for it.
 - [ ] **Run summary screen** — what you built, what killed you, fares/XP graph.
+      (First slice shipped: FIRED now shows a cause-of-death line from the
+      flight-recorder counters + the build you died in. The full shift-by-shift
+      panel is still the #1 missing piece — and doubles as the daily's share card.)
 - [ ] **More building events** — flooded floor, stuck celebrity, rival operator…
       the Spider Floor taught players to expect a haunted building; deliver a
       second ghost.
+- [ ] **Landmark language ideas from the audit** — a NEW IN TOWN modifier where
+      riders shout the LANDMARK not the number ('the cat floor!'); replace two of
+      the three same-shape colored doors (red/blue/green) with distinct fixtures.
+- [ ] **Shipped from the audit's shortlist** — shop forecast (TOMORROW: … posted
+      in the Parts Shop; specials are counterplay now), boss inherits motor/
+      brakes/reinforced, upgrades change the machine's voice (brakes hush the
+      creak, motor hums deeper, quick doors sound quicker), aligned+stopped now
+      glows the whole car border green (phone-legible readiness).
