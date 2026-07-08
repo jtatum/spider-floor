@@ -630,8 +630,10 @@ function update(dt) {
 // pick 1 of 3. Slots cap how many DISTINCT parts you can own, so a build is
 // a commitment; once a category is full, level-ups only deepen what you have.
 
+function isHouse(key) { return (run.houseKeys || []).includes(key); }
 function slotsUsed(kind) {
-  return UPGRADES.filter(u => u.kind === kind && run.up[u.key] > 0).length;
+  // house fittings (perk/operator pre-installs) don't count against your racks
+  return UPGRADES.filter(u => u.kind === kind && run.up[u.key] > 0 && !isHouse(u.key)).length;
 }
 function eligibleUpgrades() {
   return UPGRADES.filter(u => {
@@ -666,8 +668,8 @@ function openLevelUp() {
   const n = Math.max(2, 3 + (save.meta.bigShop || 0) + (OP().choiceDelta || 0));
   const choices = levelChoices(n);
   if (!choices.length) {                    // fully built: the level cashes out
-    run.parts += 3;
-    floatText('+3 ◆', '#d4a050');
+    run.parts += 5;
+    floatText('+5 ◆', '#d4a050');
     return;
   }
   game.levelUp = { choices, banishMode: false, paidRerolls: 0 };
@@ -797,7 +799,7 @@ const BOSS = {
 function enterBoss() {
   save.stats.bossTries++; checkAchievements();
   game.state = 'BOSS';
-  const hp = 6 + Math.floor((run.shiftNum - 1) / 3)    // scales a little with how far you got
+  const hp = 7 + Math.floor((run.shiftNum - 1) / 3)    // scales a little with how far you got
            + (runHeat() >= 5 ? 2 : 0);                 // THE WEB REMEMBERS
   // you bring THE MACHINE YOU BUILT to the roof: motor and brakes carry up the
   // shaft, a reinforced car (or a union card) is one more heart in the web
@@ -864,8 +866,9 @@ function updateBoss(dt) {
       if (bg.attackKind === 'sweep') {
         bg.danger.active = true; sfx.hurt();
       } else if (bg.attackKind === 'brood') {
-        const n = 2 + Math.floor(run.shiftNum / 4) + (runHeat() >= 5 ? 1 : 0);
-        for (let i = 0; i < Math.min(runHeat() >= 5 ? 5 : 4, n); i++) bossSpawnMini(bg);
+        // brood is squishable now (fast contact kills it), so it can come thicker
+        const n = 3 + Math.floor(run.shiftNum / 4) + (runHeat() >= 5 ? 1 : 0);
+        for (let i = 0; i < Math.min(5, n); i++) bossSpawnMini(bg);
         bg.danger = null;
       }
       bg.sState = 'strike'; bg.sTimer = 0.45;
@@ -885,11 +888,21 @@ function updateBoss(dt) {
   if (bg.danger && bg.danger.active) {
     if (Math.abs(C.y - bg.danger.y) < BOSS.carH / 2 + bg.danger.h / 2 && C.invuln <= 0) bossHurt(bg);
   }
-  // ── falling brood ──
+  // ── falling brood: momentum is the weapon here too. A fast-moving car
+  // squishes them on the way past; only SLOW contact hurts — so parking to
+  // line up a ram on the boss is exactly when you're vulnerable. (Playtest
+  // fix: the car can't dodge sideways, so undodgeable brood had to be
+  // killable instead.)
   for (const m of bg.minis) {
     m.y += m.vy * dt; m.sway += dt * 8; m.x += Math.sin(m.sway) * 0.4;
-    if (Math.abs(m.x - W / 2) < BOSS.carW / 2 && Math.abs(m.y - C.y) < BOSS.carH / 2 + m.r && C.invuln <= 0) {
-      bossHurt(bg); m.y = H + 99;
+    if (Math.abs(m.x - W / 2) < BOSS.carW / 2 && Math.abs(m.y - C.y) < BOSS.carH / 2 + m.r) {
+      if (Math.abs(C.v) >= 180) {
+        bossPop(bg, m.x, m.y, '#ff3a5a', 6);
+        m.y = H + 99;
+        sfx.slash();
+      } else if (C.invuln <= 0) {
+        bossHurt(bg); m.y = H + 99;
+      }
     }
   }
   bg.minis = bg.minis.filter(m => m.y < H + 40);
@@ -979,14 +992,19 @@ const SPECIALS = [
 // The shop is the BETWEEN-shift layer now: consumables and one-shot specials.
 // Parts (◆) buy preparation; level-ups (XP) build the machine.
 function openShop() {
-  shop = { offers: shuffle(SPECIALS).slice(0, 2), bought: {}, paidRerolls: 0 };
+  shop = { offers: shuffle(SPECIALS).slice(0, 2), bought: {}, paidRerolls: 0,
+           spent: 0, fusesBought: 0, specialsBought: 0 };
   game.state = 'SHOP';
 }
+// the deep-pockets sinks: every restock and every extra fuse costs more than
+// the last. Spend the spider money somewhere — that's the point.
 const REROLL_COST = 3;
-const PAID_REROLLS_PER_VISIT = 1;   // scarcity keeps the shelf a real decision
+function restockCost() { return REROLL_COST * (shop.paidRerolls + 1); }   // 3, 6, 9…
 function rerollShop() {
-  if (shop.paidRerolls >= PAID_REROLLS_PER_VISIT || run.parts < REROLL_COST) { sfx.buzz(); return; }
-  run.parts -= REROLL_COST;
+  const cost = restockCost();
+  if (run.parts < cost) { sfx.buzz(); return; }
+  run.parts -= cost;
+  shop.spent += cost;
   shop.paidRerolls++;
   shop.offers = shuffle(SPECIALS).slice(0, 2);
   shop.bought = {};
@@ -996,14 +1014,19 @@ function buySpecial(s) {
   if (!s || (shop.bought && shop.bought[s.key])) { sfx.buzz(); return; }
   if (run.parts < s.cost) { sfx.buzz(); return; }
   run.parts -= s.cost;
+  shop.spent += s.cost;
+  shop.specialsBought++;
   s.apply();
   shop.bought[s.key] = true;
   sfx.buy();
 }
 const FUSE_COST = 6;
+function fuseCost() { return FUSE_COST + 2 * run.fuses; }   // hoarding gets pricey
 function buyFuse() {
-  if (run.parts < FUSE_COST) { sfx.buzz(); return; }
-  run.parts -= FUSE_COST;
+  const cost = fuseCost();
+  if (run.parts < cost) { sfx.buzz(); return; }
+  run.parts -= cost;
+  if (shop) { shop.spent += cost; shop.fusesBought++; }
   run.fuses++;
   sfx.buy();
 }

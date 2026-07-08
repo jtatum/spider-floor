@@ -167,7 +167,7 @@ function enterMaze() {
     loot: 0, killed: 0, hitTaken: false, hits: 0, rootsTaken: 0, hitFlash: 0, fx: [],
     spawnTimer: 2.2,
     spawnEvery: Math.max(1.2, 2.6 - run.shiftNum * 0.07) / mazeHeat(),
-    lootPerKill: 2 + (assoc >= 2 ? 1 : 0),
+    lootPerKill: 1 + (assoc >= 2 ? 1 : 0),   // kills are XP and survival; COCOONS are the payday
     swingCool: 0.4, swing: null,
     flow: null, flowTimer: 0,
     result: null, exitT: 0,
@@ -247,7 +247,7 @@ function openCocoon(mz, c) {
   gainXP(4);                             // knowledge can't be stolen on the way out
   const roll = Math.random();
   if (roll < 0.62) {
-    const n = 2 + Math.floor(Math.random() * 3);
+    const n = 3 + Math.floor(Math.random() * 3);
     mz.loot += n;
     mazeFxText(mz, c.x, c.y, `+${n} ◆`);
   } else if (roll < 0.85 && P.hp < P.maxHp) {

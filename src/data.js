@@ -44,9 +44,11 @@ const CFG = {
   // ── leveling (the Vampire-Survivors heartbeat): deliveries → XP → pick-1-of-3 ──
   xpDeliver: 9,           // flat XP per delivery
   xpPerFare: 3,           // + XP per ◆ of the fare (rich fares teach you more)
-  xpSpider: 6,            // XP per spider slain on the Spider Floor
+  xpSpider: 4,            // XP per spider slain on the Spider Floor
   xpBase: 24,             // first level-up costs this…
-  xpGrowth: 9,            // …and each one after costs this much more
+  xpGrowth: 13,           // …and each one after costs this much more
+                          // (tuned so the build completes ~shift 6, not shift 3 —
+                          //  the roof should be a choice, not a victory lap)
 };
 
 // Build slots — you can't learn everything. Fittings are machine parts; habits
@@ -345,15 +347,15 @@ const ACHIEVEMENTS = [
   // ── early milestones — modest ──
   { key: 'deliver50', name: 'Regular Service',           desc: 'Deliver 50 passengers (lifetime).',        award: 4,  test: s => s.deliveries >= 50 },
   { key: 'shift3',    name: 'Getting the Hang of It',    desc: 'Reach shift 3.',                           award: 3,  test: s => s.maxShift >= 3 },
-  { key: 'busy',      name: 'Rush Hour Hero',            desc: 'Deliver 12 in a single shift.',            award: 4,  test: s => s.bestShiftDeliveries >= 12 },
+  { key: 'busy',      name: 'Rush Hour Hero',            desc: 'Deliver 18 in a single shift.',            award: 4,  test: s => s.bestShiftDeliveries >= 18 },
   { key: 'perfect',   name: 'Spotless',                  desc: 'Finish a shift with no walk-offs.',        award: 4,  test: s => s.perfectShifts >= 1 },
-  { key: 'rich',      name: 'Deep Pockets',              desc: 'Hold ◆30 at once.',                        award: 4,  test: s => s.bestRunParts >= 30 },
+  { key: 'rich',      name: 'Deep Pockets',              desc: 'Hold ◆75 at once.',                        award: 4,  test: s => s.bestRunParts >= 75 },
   { key: 'maxOut',    name: 'Dream Machine',             desc: 'Max out an upgrade.',                      award: 4,  test: s => s.everMaxed >= 1 },
   { key: 'vip5',      name: 'Friends in High Places',    desc: 'Deliver 5 VIPs.',                          award: 3,  test: s => s.vips >= 5 },
   { key: 'mover10',   name: 'Heavy Lifting',             desc: 'Deliver 10 movers.',                       award: 4,  test: s => s.movers >= 10 },
   { key: 'tipper10',  name: 'Generous Sort',             desc: 'Deliver 10 tippers.',                      award: 4,  test: s => s.tippers >= 10 },
   { key: 'power10',   name: 'Charged Up',                desc: 'Collect 10 power-ups.',                    award: 4,  test: s => s.powerups >= 10 },
-  { key: 'slay10',    name: 'Exterminator',              desc: 'Slay 10 spiders (lifetime).',              award: 3,  test: s => s.spiders >= 10 },
+  { key: 'slay10',    name: 'Exterminator',              desc: 'Slay 30 spiders (lifetime).',              award: 3,  test: s => s.spiders >= 30 },
   { key: 'firstPerk', name: 'Home Improvement',          desc: 'Buy a permanent Workshop perk.',           award: 2,  test: s => s.perks >= 1 },
   { key: 'twoMod',    name: 'Bad Day at Work',           desc: 'Work a shift under two conditions.',       award: 3,  test: s => s.twoModShift >= 1 },
   { key: 'night',     name: 'Graveyard',                 desc: 'Work the Graveyard Shift.',                award: 3,  test: s => s.nightShift >= 1 },
@@ -361,7 +363,7 @@ const ACHIEVEMENTS = [
   { key: 'deliver250',name: 'Veteran Operator',          desc: 'Deliver 250 passengers (lifetime).',       award: 8,  test: s => s.deliveries >= 250 },
   { key: 'shift6',    name: 'Seasoned',                  desc: 'Reach shift 6.',                           award: 7,  test: s => s.maxShift >= 6 },
   { key: 'perfect5',  name: 'Consummate Professional',   desc: 'Finish 5 spotless shifts.',                award: 9,  test: s => s.perfectShifts >= 5 },
-  { key: 'haul',      name: 'Spoils of War',             desc: 'Carry ◆15 out of one Spider Floor visit.', award: 7,  test: s => s.bestSpiderLoot >= 15 },
+  { key: 'haul',      name: 'Spoils of War',             desc: 'Carry ◆45 out of one Spider Floor visit.', award: 7,  test: s => s.bestSpiderLoot >= 45 },
   { key: 'comeback',  name: 'Comeback Kid',              desc: 'Survive a shift one strike from fired.',   award: 7,  test: s => s.comeback >= 1 },
   { key: 'perks5',    name: 'Renovator',                 desc: 'Own 5 perk levels.',                       award: 6,  test: s => s.perks >= 5 },
   { key: 'flawless',  name: 'Not a Scratch',             desc: 'Clear a Spider Floor visit unhurt (3+ kills).', award: 8, test: s => s.noHitClears >= 1 },
@@ -369,8 +371,8 @@ const ACHIEVEMENTS = [
   { key: 'deliver1k', name: 'Career Operator',           desc: 'Deliver 1000 passengers (lifetime).',      award: 16, test: s => s.deliveries >= 1000 },
   { key: 'shift10',   name: 'Elevator Whisperer',        desc: 'Reach shift 10.',                          award: 14, test: s => s.maxShift >= 10 },
   { key: 'shift15',   name: 'Untouchable',               desc: 'Reach shift 15.',                          award: 20, test: s => s.maxShift >= 15 },
-  { key: 'maxOut3',   name: 'Fully Loaded',              desc: 'Max 3 upgrades in one run.',               award: 12, test: s => s.bestMaxedRun >= 3 },
-  { key: 'slay100',   name: "Arachnophobe's Revenge",    desc: 'Slay 100 spiders (lifetime).',             award: 14, test: s => s.spiders >= 100 },
+  { key: 'maxOut3',   name: 'Fully Loaded',              desc: 'Max 6 upgrades in one run.',               award: 12, test: s => s.bestMaxedRun >= 6 },
+  { key: 'slay100',   name: "Arachnophobe's Revenge",    desc: 'Slay 400 spiders (lifetime).',             award: 14, test: s => s.spiders >= 400 },
   { key: 'perks12',   name: 'Master of the House',       desc: 'Own 12 perk levels.',                      award: 12, test: s => s.perks >= 12 },
   { key: 'climb',     name: 'The Long Climb',            desc: 'Climb past the penthouse to face the truth.', award: 4, test: s => s.bossTries >= 1 },
   { key: 'cutCord',   name: 'Cut the Cord',              desc: 'Defeat the spider that controls the lift.', award: 30, test: s => s.bossWins >= 1 },
@@ -493,8 +495,13 @@ function newRun(opKey, heat) {
     const pool = UPGRADES.filter(u => u.kind === 'fitting' && up[u.key] < u.max);
     if (pool.length) up[pool[Math.floor(Math.random() * pool.length)].key]++;
   }
+  // anything the Workshop (or your operator) pre-installed is a HOUSE FITTING:
+  // bolted to the building, not your racks. It never occupies a slot — meta
+  // progression is relief, and relief shouldn't tax your build freedom.
+  const houseKeys = Object.keys(up).filter(k => up[k] > 0);
   return {
     operator,
+    houseKeys,
     heat: Math.max(0, Math.min(maxHeatUnlocked(), heat || 0)),
     up,
     parts: [0, 5, 10, 15, 20][meta.severance] ?? 0,
@@ -522,7 +529,11 @@ function mods() {
   const u = run.up;
   const L = (k) => u[k] || 0;
   const o = OP();
-  const cushion = [1, 1.25, 1.45, 1.6][L('cushions')];
+  // patience bonuses ADD, never multiply — each purchase is felt at face value,
+  // but the stack can't compound into "timers don't exist" (flight-recorder
+  // verdict: Vera + full-calm build hit ×2.8 and had 0 close calls in 84 fares)
+  const cushAdd = [0, 0.20, 0.35, 0.45][L('cushions')];
+  const opAdd = (o.patMul || 1) - 1;
   return {
     maxSpeed:   CFG.maxSpeed   * [1, 1.22, 1.40, 1.55][L('motor')],
     accel:      CFG.accel      * [1, 1.18, 1.32, 1.45][L('motor')],
@@ -531,8 +542,8 @@ function mods() {
     coastFriction: CFG.coastFriction - [0, 0.004, 0.008][L('damper')],
     alignTol:   CFG.alignTolerance + [0, 4, 8][L('precision')],
     // patience multipliers — applied to (base + perFloor × trip) at spawn/board
-    patWaitMul: cushion * [1, 1.25, 1.5][L('coffee')] * (o.patMul || 1),
-    patRideMul: cushion * [1, 1.25, 1.5][L('muzak')]  * (o.patMul || 1),
+    patWaitMul: 1 + cushAdd + [0, 0.20, 0.35][L('coffee')] + opAdd,
+    patRideMul: 1 + cushAdd + [0, 0.20, 0.35][L('muzak')] + opAdd,
     capacity:   CFG.capacity + [0, 1, 2, 3][L('capacity')] + [0, 1, 2][save.meta.roomierStart],
     autoLevel:  L('autoLevel') >= 1,
     autoDoors:  L('autoDoors') >= 1,
@@ -563,6 +574,13 @@ function shiftParams(n) {
 function startShift() {
   menu = null;
   paused = false;
+  // flight recorder: close out the shop visit that led here (spend itemized)
+  if (shop && shop.spent != null) {
+    metRecord('shop', { beforeShift: run.shiftNum + 1, spent: shop.spent,
+                        fuses: shop.fusesBought, specials: shop.specialsBought,
+                        restocks: shop.paidRerolls });
+    shop = null;
+  }
   run.shiftNum++;
   const sp = shiftParams(run.shiftNum);
   const active = [];
@@ -609,8 +627,8 @@ function startShift() {
     levelUp: null,                           // the open pick-1-of-3, when state === 'LEVELUP'
     downTimer: introT + 5,                   // upstairs calls start after the day warms up
     // flight-recorder counters for this shift (see metRecord)
-    met: { levelStart: run.level, fares: 0, fareCount: 0, downDelivered: 0,
-           closeCalls: 0, fusesBurned: 0, stairsMissed: 0 },
+    met: { levelStart: run.level, partsStart: run.parts, fares: 0, fareCount: 0,
+           downDelivered: 0, closeCalls: 0, fusesBurned: 0, stairsMissed: 0 },
     m,
   };
 
@@ -703,6 +721,7 @@ function endShift(reason) {
     downDelivered: met.downDelivered || 0,
     closeCalls: met.closeCalls || 0,
     bonus: game.bonus || 0,
+    partsStart: met.partsStart ?? 0,
     partsEnd: run.parts,
     levelEnd: run.level, levelsGained: run.level - (met.levelStart || 0),
   });

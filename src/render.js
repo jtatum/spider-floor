@@ -1710,7 +1710,7 @@ function drawShop() {
   ctx.fillStyle = '#6a6a4a'; ctx.font = '11px ui-monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
   ctx.fillText("TODAY'S SHELF", x0, shelfY - 6);
   const shelf = [
-    { key: 'F', name: 'Spare Fuse', cost: FUSE_COST, blurb: `Forgive one walk-off. Carrying ${run.fuses}.`, fn: buyFuse, bought: false },
+    { key: 'F', name: 'Spare Fuse', cost: fuseCost(), blurb: `Forgive one walk-off. Carrying ${run.fuses}.`, fn: buyFuse, bought: false },
     ...shop.offers.map((s, i) => ({ key: i === 0 ? 'Z' : 'X', name: s.name, cost: s.cost, blurb: s.blurb,
                                     fn: () => buySpecial(s), bought: !!(shop.bought && shop.bought[s.key]) })),
   ];
@@ -1730,8 +1730,7 @@ function drawShop() {
     else { ctx.fillStyle = afford ? '#d4a050' : '#7a5a3a'; ctx.fillText(`◆ ${it.cost}`, ix + itemW - 10, shelfY + itemH - 8); }
     if (!it.bought) buttons.push({ x: ix, y: shelfY, w: itemW, h: itemH, fn: it.fn });
   });
-  const rrSpent = shop.paidRerolls >= PAID_REROLLS_PER_VISIT;
-  drawButton(rrSpent ? '↻ RESTOCK  (used)' : `↻ RESTOCK SHELF  (◆${REROLL_COST})`,
+  drawButton(`↻ RESTOCK SHELF  (◆${restockCost()})`,
              W / 2 - 130, shelfY + itemH + 12, 260, 32, rerollShop, false);
 
   // ── your build so far: fittings and habits, with levels ──
@@ -1755,8 +1754,24 @@ function drawBuildColumn(kind, x, y, colW, nameFont = 'bold 13px ui-monospace') 
   ctx.fillStyle = '#6a6a4a'; ctx.font = '11px ui-monospace';
   ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
   ctx.fillText(`${kind === 'habit' ? 'HABITS' : 'FITTINGS'}  ${slotsUsed(kind)}/${cap}`, x, y - 4);
-  const owned = UPGRADES.filter(u => u.kind === kind && run.up[u.key] > 0);
+  const owned = UPGRADES.filter(u => u.kind === kind && run.up[u.key] > 0 && !isHouse(u.key));
   let cy = y + 2;
+  // house fittings first: the Workshop bolted these to the BUILDING — they
+  // never occupy a rack slot (and the ⚙ says so)
+  for (const u of UPGRADES) {
+    if (u.kind !== kind || !(run.up[u.key] > 0) || !isHouse(u.key)) continue;
+    ctx.fillStyle = '#14110d'; ctx.fillRect(x, cy, colW, 26);
+    ctx.fillStyle = '#6a6a82'; ctx.fillRect(x, cy, 4, 26);
+    ctx.strokeStyle = '#26242c'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, cy + 0.5, colW - 1, 25);
+    ctx.fillStyle = '#8a8aa2'; ctx.font = nameFont;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(`⚙ ${u.name}`, x + 8, cy + 13);
+    for (let l = 0; l < u.max; l++) {
+      ctx.fillStyle = l < run.up[u.key] ? '#5a6a82' : '#26242c';
+      ctx.fillRect(x + colW - 10 - (u.max - l) * 11, cy + 10, 8, 6);
+    }
+    cy += 31;
+  }
   for (let i = 0; i < cap; i++) {
     const u = owned[i];
     if (u) {
