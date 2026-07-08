@@ -75,34 +75,38 @@ Open follow-ups:
       wants it; the pacing implications need James's playtest verdict).
 - [ ] (Deliberately NOT adding spider-floor-only upgrades to the level-up pool —
       dead cards 90% of a shift.)
-- [ ] **AUDIT FINDING (needs James's verdict): the Spider Floor is strictly
-      dominant** — update() freezes ALL shift patience during MAZE, loot/kill is
-      flat, so never-skip is correct and a long farm out-earns the day job ~5x.
-      Candidate fixes: waiting patience keeps draining at ~30% inside; loot decay
-      after ~35s; cap paid kills per visit. Deliberately NOT changed this session.
+- [ ] **AUDIT FINDING, half settled: the Spider Floor was strictly dominant.**
+      The June 11 balance merge already took the economy half (kills pay 1◆ not
+      2, payday moved into cocoons, spider XP 6→4). STILL OPEN: update() freezes
+      ALL shift patience during MAZE, so a long visit is still free real estate —
+      candidate fix remains waiting patience draining at ~30% inside. Verdict
+      wanted on that half only.
 
 ## Later
 
 - [ ] **Balance playtest pass (human hands)** — XP curve (`xpBase`/`xpGrowth`),
       down-spawn cadence (×2.6), heat rung tuning, late-shift quota slog
       (`6 + n*2.2` vs. patience squeeze — shift 10 may be a grind, not a crescendo).
-      THE AUDIT DID THE ARITHMETIC (2026-07, multi-agent + queue sims) — verdicts
-      wanted on four findings, none changed in code yet:
-      · **Shift 5 cliff**: base-stat throughput ceiling (~13.5-16 deliveries/min)
-        < arrivals (20.7/min) — 60-seed sim survival 100/100/93/53/0% for shifts
-        1-5 without move/door/cargo cards. A TAS fails shift 6. Softer ramp
-        (spawn 4.8 − 0.28n, floor 1.9) or guarantee a throughput card early.
-      · **Shift 9-10 flatline**: patMul and spawn both hit their floors there;
-        only quota keeps growing → same pressure, longer shifts. Cap quota ~25
-        and scale intensity (rush waves / second modifier) instead of length.
-      · **Level-up heartbeat slows ~5x** by shift 8 (17s → 69-124s per pick).
-        Fiction-friendly fix: XP scales with trip distance (a penthouse haul
-        teaches more than a hop).
-      · **Heat rungs 2+3+4 all attack strikes** and stack multiplicatively; the
-        ladder narrows onto one resource. Re-denominate rung 3 as economic?
-      (Fixed outright this session: nervous riders' 0.6× now cuts the patience
-      BASE only, not the per-floor trip budget — long-haul nervous riders were
-      provably undeliverable as last-in-batch from shift 6.)
+      THE AUDIT DID THE ARITHMETIC (2026-07, multi-agent + queue sims). The
+      June 11 balance merge settled some of it; still open:
+      · **Shift 5 cliff** (OPEN): base-stat throughput ceiling (~13.5-16
+        deliveries/min) < arrivals (20.7/min) — 60-seed sim survival
+        100/100/93/53/0% for shifts 1-5 without move/door/cargo cards. A TAS
+        fails shift 6. Softer ramp (spawn 4.8 − 0.28n, floor 1.9) or guarantee
+        a throughput card early. (Numbers predate additive patience — the
+        failure mode shifts but the arrival-rate wall stands; worth a re-sim.)
+      · **Shift 9-10 flatline** (OPEN): patMul and spawn both hit their floors
+        there; only quota keeps growing → same pressure, longer shifts. Cap
+        quota ~25 and scale intensity (rush waves / second modifier) instead.
+      · **Level-up heartbeat slows late** — SETTLED the other way: the June 11
+        pass deliberately slowed completion (xpGrowth 13, overflow pays +5◆)
+        so the build lands ~shift 6. The audit's speed-it-up idea is overridden
+        by James's tested preference; drop it.
+      · **Heat rungs 2+3+4 all attack strikes** (OPEN) and stack; the ladder
+        narrows onto one resource. Re-denominate rung 3 as economic?
+      (Fixed outright in the mobile session: nervous riders' 0.6× now cuts the
+      patience BASE only, not the per-floor trip budget — long-haul nervous
+      riders were provably undeliverable as last-in-batch from shift 6.)
 - [ ] **Daily seeded run** — needs a seeded RNG plumbed through `shuffle`/spawns;
       shareable "today's building" + local best. The web build's retention hook.
 - [ ] **Victory-song subtitles** — the lyrics deserve timed captions; build the
