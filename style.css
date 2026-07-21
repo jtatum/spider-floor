@@ -21,9 +21,11 @@ html, body {
 }
 canvas {
   background: #0d0a08;
-  border: 2px solid #3a2e22;
+  border: 2px solid #514133;
   border-radius: 4px;
-  box-shadow: 0 0 60px rgba(191, 164, 95, 0.06);
+  box-shadow: 0 0 0 1px rgba(214, 184, 115, 0.08),
+              0 16px 70px rgba(0, 0, 0, 0.48),
+              0 0 60px rgba(191, 164, 95, 0.09);
   /* none, not manipulation: the maze stick and settings sliders are pointer
      drags on this element — the browser must never claim them as scrolls.
      Taps still fire click events, so menu cards keep working. */
@@ -31,8 +33,10 @@ canvas {
 }
 .hint {
   font-size: 12px;
-  opacity: 0.55;
+  color: #c5ad78;
+  opacity: 0.76;
   letter-spacing: 0.12em;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8);
 }
 
 /* ── on-screen touch controls (phones) ── */

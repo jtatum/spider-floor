@@ -18,6 +18,10 @@ function wantsTinny(st, r) {
 
 let lastT = performance.now();
 function loop(now) {
+  // Moving a window between monitors can change DPR without firing a reliable
+  // resize event in every browser. Keep the backing store in sync before the
+  // next frame; this is only a number comparison during ordinary frames.
+  if (canvasPixelRatio !== desiredCanvasPixelRatio()) fit();
   const dt = Math.min(0.05, (now - lastT) / 1000);
   lastT = now;
   update(dt);
@@ -111,18 +115,47 @@ function updateHint() {
   if (text !== lastHint) { lastHint = text; hintEl.textContent = text; }
 }
 
-// fit canvas to viewport while keeping internal resolution
+// Fit the logical 900x700 stage to the viewport. The CSS size controls layout;
+// the backing store separately follows that size at the screen's pixel density,
+// so fractional viewport fits and Retina displays do not blur small type.
+const MAX_CANVAS_PIXEL_RATIO = 3; // bounds a full-screen buffer to ~45 MB here
+let canvasPixelRatio = 0;
+let canvasCssScale = 1;
+const prefersReducedMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+function desiredCanvasPixelRatio() {
+  const ratio = Number(window.devicePixelRatio) || 1;
+  return Math.min(MAX_CANVAS_PIXEL_RATIO, Math.max(1, ratio));
+}
+function resizeCanvasBackingStore(cssWidth, cssHeight) {
+  const ratio = desiredCanvasPixelRatio();
+  const backingWidth = Math.max(1, Math.round(cssWidth * ratio));
+  const backingHeight = Math.max(1, Math.round(cssHeight * ratio));
+
+  // Assigning either dimension clears the canvas and resets all context state,
+  // so only do it when a resize is actually required.
+  if (canvas.width !== backingWidth) canvas.width = backingWidth;
+  if (canvas.height !== backingHeight) canvas.height = backingHeight;
+
+  // Rendering remains in the fixed W x H coordinate system. Deriving each
+  // scale from the rounded backing dimension also avoids a one-pixel edge seam.
+  ctx.setTransform(backingWidth / W, 0, 0, backingHeight / H, 0, 0);
+  canvasPixelRatio = ratio;
+}
 function fit() {
   const pad = 16;
   // budget for the frame's chrome (10px gap + hint line + canvas border) so a
   // height-constrained layout (landscape phones) never overflows the viewport —
   // overflow made the page scrollable, which let the browser steal stick drags
   const chrome = 30;
-  const sw = (window.innerWidth - pad) / W;
-  const shh = (window.innerHeight - pad - chrome) / H;
+  const sw = Math.max(1, window.innerWidth - pad) / W;
+  const shh = Math.max(1, window.innerHeight - pad - chrome) / H;
   const s = Math.min(sw, shh, 1.4);
-  canvas.style.width = (W * s) + 'px';
-  canvas.style.height = (H * s) + 'px';
+  canvasCssScale = s;
+  const cssWidth = W * s;
+  const cssHeight = H * s;
+  canvas.style.width = cssWidth + 'px';
+  canvas.style.height = cssHeight + 'px';
+  resizeCanvasBackingStore(cssWidth, cssHeight);
 }
 window.addEventListener('resize', fit);
 fit();
@@ -198,4 +231,3 @@ function refreshTouchEnabled() {
 setupTouch();
 refreshTouchEnabled();
 window.addEventListener('resize', refreshTouchEnabled);
-
