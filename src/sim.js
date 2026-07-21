@@ -200,10 +200,15 @@ function jam() {
 const buttons = [];   // {x,y,w,h,fn} rebuilt each render for clickable screens
 const sliders = [];   // {x,y,w,h,tx,tw,set} rebuilt each render (settings panel)
 function canvasPos(ev) {
-  // map against the CONTENT box: getBoundingClientRect includes the 2px border,
-  // which skewed every tap ~5 canvas px toward the top-left on phones
+  // Map against the CSS content box, never canvas.width/height: the backing
+  // store is DPR-scaled while all hit regions live in the logical W x H stage.
+  // The inline sizes retain their fractional precision (clientWidth rounds),
+  // and getBoundingClientRect still supplies the page-relative border origin.
   const r = canvas.getBoundingClientRect();
-  const cw = canvas.clientWidth || r.width, ch = canvas.clientHeight || r.height;
+  const styledWidth = Number.parseFloat(canvas.style.width);
+  const styledHeight = Number.parseFloat(canvas.style.height);
+  const cw = styledWidth > 0 ? styledWidth : (canvas.clientWidth || r.width);
+  const ch = styledHeight > 0 ? styledHeight : (canvas.clientHeight || r.height);
   return { mx: (ev.clientX - r.left - (canvas.clientLeft || 0)) * (W / cw),
            my: (ev.clientY - r.top - (canvas.clientTop || 0)) * (H / ch) };
 }
@@ -382,6 +387,24 @@ function update(dt) {
   if (game && game.state === 'BOSS') { updateBoss(dt); return; }
   if (!game || game.state !== 'PLAYING') return;
   game.t += dt;
+
+  // Hitting quota freezes the machinery for one last visual beat. The final
+  // rider still gets to cross the threshold, but the shift cannot spawn,
+  // drain patience, move the car, or award anything else during the walk.
+  if (game.quotaExitUntil) {
+    for (const p of game.passengers) {
+      p.bob += dt * 2.2;
+      if (p.shoutDelay > 0) p.shoutDelay = Math.max(0, p.shoutDelay - dt);
+      else if (p.shoutT > 0) p.shoutT -= dt;
+    }
+    game.passengers = game.passengers.filter(p => {
+      if (p.state === 'delivered' || p.state === 'left') return (p.removeAt ?? 0) > game.t;
+      return true;
+    });
+    if (game.t >= game.quotaExitUntil) endShift('quota');
+    return;
+  }
+
   game.shiftTime += dt;
 
   // hold R to abandon the run — a tap does nothing, so no fat-fingered wipes
@@ -556,21 +579,35 @@ function update(dt) {
   // board: anyone waiting at THIS floor, aligned, open, with room — FIFO (movers take 2 slots)
   if (aligned && open) {
     const waiting = game.passengers.filter(p => p.state === 'waiting' && p.origin === ci);
+    // Start after any callouts already in flight. This matters when somebody
+    // joins while the doors are held open: separate boarding batches must not
+    // talk over the cabin's existing destination queue.
+    let shoutCursor = game.passengers.reduce((latest, p) => {
+      if (p.state !== 'riding') return latest;
+      const remaining = Math.max(0, p.shoutDelay || 0) + Math.max(0, p.shoutT || 0);
+      return Math.max(latest, remaining);
+    }, 0);
     for (const p of waiting) {
       if (slotsAboard() + p.size > cap) continue;   // won't fit — skip, try the next
       p.state = 'riding';
+      p.boardAt = game.t;  // renderer walks them through the doorway; capacity changes now
       p.reveal = CFG.rememberTime;
       // patience resets to the ride pool, scaled by the trip still ahead
       p.patience = ridePatFor(Math.abs(p.dest - ci), p.kind === 'nervous');
       p.patienceMax = p.patience;
-      p.shoutT = 1.5;       // they SHOUT the floor as they step in — a speech bubble
+      // A cabinful used to shout every bubble on the same frame. Queue the
+      // callouts so each destination gets one clean, readable beat.
+      p.shoutDelay = shoutCursor;
+      p.shoutT = 0.95;
+      shoutCursor += p.shoutT;
       sfx.board();
     }
   }
 
   for (const p of game.passengers) {
     p.bob += dt * 2.2;
-    if (p.shoutT > 0) p.shoutT -= dt;
+    if (p.shoutDelay > 0) p.shoutDelay = Math.max(0, p.shoutDelay - dt);
+    else if (p.shoutT > 0) p.shoutT -= dt;
     if (p.state === 'waiting') {
       p.patience -= dt * patDrain;
       if (p.patience <= 0) losePassenger(p);
@@ -579,7 +616,7 @@ function update(dt) {
       if (p.reveal > 0) p.reveal -= dt;
       if (open && aligned && ci === p.dest) {
         p.state = 'delivered';
-        p.removeAt = game.t + 0.45;
+        p.removeAt = game.t + CFG.passengerMoveTime;
         game.delivered++;
         run.totalDelivered++;
         let fare = Math.round(((game.power.double > 0 ? 2 : 1) + game.m.fareBonus) * game.fx.fareMul);
@@ -622,7 +659,10 @@ function update(dt) {
   if (game.strikes >= maxStrikes()) { endShift('fired'); return; }
   // an earned level-up interrupts before the shift can close — you always get your pick
   if (run.levelPending > 0) { openLevelUp(); return; }
-  if (game.delivered >= game.quota) { endShift('quota'); return; }
+  if (game.delivered >= game.quota) {
+    game.quotaExitUntil = game.t + CFG.passengerMoveTime;
+    return;
+  }
 }
 
 // ─────────────────────────────────────────── mid-shift level-ups
@@ -1042,4 +1082,3 @@ function buyMeta(m) {
   persist();
   sfx.buy();
 }
-

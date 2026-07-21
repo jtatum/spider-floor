@@ -1,6 +1,6 @@
-// Headless harness: loads the REAL game.js into a Node vm context with stubbed
-// browser globals, then exposes its internals so we can drive the simulation
-// without a browser. Rendering is never called, so the canvas/ctx are no-ops.
+// Headless harness: loads the real ordered scripts into a Node vm context with
+// stubbed browser globals, then exposes selected internals so tests can drive
+// the game without a browser. Canvas calls are recorded but remain no-ops.
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 // The game is split into ordered classic scripts that share one global scope;
 // concatenating them in load order reproduces the exact browser environment.
-const SRC_FILES = ['data.js', 'sim.js', 'maze.js', 'render.js', 'audio.js', 'main.js'];
+const SRC_FILES = ['assets.js', 'data.js', 'sim.js', 'maze.js', 'render.js', 'audio.js', 'main.js'];
 const SRC = SRC_FILES
   .map(f => fs.readFileSync(path.join(here, '..', 'src', f), 'utf8'))
   .join('\n');
@@ -42,11 +42,14 @@ const SHIM = `
   get mazeStick(){return mazeStick}, set mazeStick(v){mazeStick=v},
   get touchEnabled(){return touchEnabled}, set touchEnabled(v){touchEnabled=v},
   stopSpeedNow,
+  W, H, canvas, canvasPos, fit, desiredCanvasPixelRatio,
+  get canvasPixelRatio(){return canvasPixelRatio},
   metRecord, metricsAll, metricsSummary, cyr, wantsTinny,
+  LandmarkAssets, drawLandmark, drawPassenger,
 };
 `;
 
-export function makeGame() {
+export function makeGame(options = {}) {
   const store = new Map();
   const localStorage = {
     getItem: k => (store.has(k) ? store.get(k) : null),
@@ -54,25 +57,43 @@ export function makeGame() {
     removeItem: k => store.delete(k),
     clear: () => store.clear(),
   };
-  // a ctx mock: every draw call is a no-op; the few methods with return values
-  // are special-cased. We never call render() in tests, so this is belt-and-braces.
+  // A ctx mock: every draw call is recorded and otherwise a no-op; the few
+  // methods with return values are special-cased for targeted renderer tests.
+  const transforms = [];
+  const ctxCalls = [];
   const ctx = new Proxy({}, {
     get(_, p) {
-      if (p === 'measureText') return () => ({ width: 0 });
-      if (p === 'createLinearGradient' || p === 'createRadialGradient') return () => ({ addColorStop() {} });
-      return () => {};
+      if (p === 'measureText') return (...args) => {
+        ctxCalls.push({ method: p, args });
+        return { width: 0 };
+      };
+      if (p === 'createLinearGradient' || p === 'createRadialGradient') return (...args) => {
+        ctxCalls.push({ method: p, args });
+        return { addColorStop() {} };
+      };
+      if (p === 'setTransform') return (...args) => {
+        ctxCalls.push({ method: p, args });
+        transforms.push(args);
+      };
+      return (...args) => ctxCalls.push({ method: p, args });
     },
     set() { return true; },
   });
   const canvas = {
     width: 900, height: 700, style: {},
+    clientLeft: 2, clientTop: 2,
     getContext: () => ctx,
     addEventListener: () => {},
-    getBoundingClientRect: () => ({ left: 0, top: 0, width: 900, height: 700 }),
+    getBoundingClientRect() {
+      return { left: 11, top: 17,
+        width: (Number.parseFloat(this.style.width) || 900) + 4,
+        height: (Number.parseFloat(this.style.height) || 700) + 4 };
+    },
   };
   const win = {
     addEventListener: () => {}, removeEventListener: () => {},
     innerWidth: 1200, innerHeight: 900,
+    devicePixelRatio: 2,
     AudioContext: undefined, webkitAudioContext: undefined,
     matchMedia: () => ({ matches: false }),
   };
@@ -93,10 +114,14 @@ export function makeGame() {
     clearTimeout: () => {},
     console,
   };
+  if (typeof options.Image === 'function') sandbox.Image = options.Image;
   const context = vm.createContext(sandbox);
   vm.runInContext(SRC + SHIM, context, { filename: 'game.js' });
   const G = context.__GAME__;
   G._localStorage = localStorage;
+  G._ctxTransforms = transforms;
+  G._ctxCalls = ctxCalls;
+  G._resetCtxCalls = () => { ctxCalls.length = 0; };
   G.step = (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) G.update(dt); };
   return G;
 }

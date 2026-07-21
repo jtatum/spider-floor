@@ -21,6 +21,88 @@ const addRider = (G, dest, kind = 'normal') => {
   p.state = 'riding'; p.reveal = 0; return p;
 };
 
+test('canvas keeps logical coordinates across viewport fit and Retina backing pixels', (G) => {
+  assert.equal(G.W, 900); assert.equal(G.H, 700);
+  const cssWidth = Number.parseFloat(G.canvas.style.width);
+  const cssHeight = Number.parseFloat(G.canvas.style.height);
+  assert.equal(G.canvas.width, Math.round(cssWidth * 2), 'backing width follows fitted CSS width x DPR');
+  assert.equal(G.canvas.height, Math.round(cssHeight * 2), 'backing height follows fitted CSS height x DPR');
+  assert.deepEqual(G._ctxTransforms.at(-1),
+    [G.canvas.width / G.W, 0, 0, G.canvas.height / G.H, 0, 0],
+    'the context maps the fixed logical stage onto the backing store');
+
+  const rect = G.canvas.getBoundingClientRect();
+  const p = G.canvasPos({
+    clientX: rect.left + G.canvas.clientLeft + cssWidth * 0.25,
+    clientY: rect.top + G.canvas.clientTop + cssHeight * 0.75,
+  });
+  assert.ok(Math.abs(p.mx - 225) < 1e-9, `pointer x remains logical (got ${p.mx})`);
+  assert.ok(Math.abs(p.my - 525) < 1e-9, `pointer y remains logical (got ${p.my})`);
+});
+
+// ── optional landmark sprites ───────────────────────────────────────────────
+
+test('landmark assets fail closed when Image is unavailable', (G) => {
+  const keys = Object.keys(G.LandmarkAssets.manifest);
+  assert.ok(keys.length > 0, 'the landmark manifest is populated');
+  assert.equal(G.LandmarkAssets.state.failed, keys.length, 'every unavailable image is marked failed');
+  assert.equal(G.LandmarkAssets.state.loaded, 0);
+  assert.equal(G.LandmarkAssets.state.pending, 0);
+  for (const key of keys) {
+    assert.equal(G.LandmarkAssets.status(key), 'failed', `${key} reports a failed load`);
+    assert.equal(G.LandmarkAssets.get(key), null, `${key} never exposes an undrawable image`);
+  }
+});
+
+test('a missing landmark sprite keeps its procedural drawing', (G) => {
+  G._resetCtxCalls();
+  G.drawLandmark({ acc: 'red' }, 100, 100);
+  assert.equal(G._ctxCalls.some(call => call.method === 'drawImage'), false,
+    'the unavailable sprite is never sent to drawImage');
+  assert.ok(G._ctxCalls.some(call => call.method === 'fillRect'
+    && call.args[0] === -3 && call.args[1] === -43 && call.args[2] === 66 && call.args[3] === 86),
+  'the red door procedural fallback still paints its main silhouette');
+});
+
+test('loaded landmark sprites draw while failed siblings use procedural fallbacks', () => {
+  class FakeImage {
+    constructor() {
+      this.complete = false;
+      this.naturalWidth = 0;
+    }
+    set src(value) {
+      this._src = value;
+      if (value.endsWith('/red.png')) {
+        this.complete = true;
+        this.naturalWidth = 64;
+        this.onload();
+      } else {
+        this.onerror();
+      }
+    }
+    get src() { return this._src; }
+  }
+
+  const G = makeGame({ Image: FakeImage });
+  assert.equal(G.LandmarkAssets.status('red'), 'loaded');
+  assert.equal(G.LandmarkAssets.status('window'), 'failed');
+
+  G._resetCtxCalls();
+  G.drawLandmark({ acc: 'red' }, 100, 100);
+  const spriteCall = G._ctxCalls.find(call => call.method === 'drawImage');
+  assert.ok(spriteCall, 'the loaded red door uses drawImage');
+  assert.equal(spriteCall.args[0], G.LandmarkAssets.get('red'), 'drawImage receives the loaded asset');
+  assert.deepEqual(spriteCall.args.slice(1), [6, -54, 52, 108], 'the sprite uses its normalized exhibit box');
+
+  G._resetCtxCalls();
+  G.drawLandmark({ acc: 'window' }, 100, 100);
+  assert.equal(G._ctxCalls.some(call => call.method === 'drawImage'), false,
+    'a failed sibling does not borrow the loaded sprite');
+  assert.ok(G._ctxCalls.some(call => call.method === 'fillRect'
+    && call.args[0] === 0 && call.args[1] === -46 && call.args[2] === 64 && call.args[3] === 82),
+  'the failed window sprite falls back to its procedural silhouette');
+});
+
 // ── core loop ───────────────────────────────────────────────────────────────
 
 test('cabin capacity is enforced (no clown car)', (G) => {
@@ -44,6 +126,240 @@ test('a mover takes two cabin slots', (G) => {
   assert.ok(G.slotsAboard() <= G.capacityNow(), 'never over capacity');
   assert.ok(G.game.passengers.filter(p => p.state === 'riding').length < G.capacityNow(),
     'fewer heads than slots because the mover eats two');
+});
+
+test('boarding is immediate, occupies cabin slots, and timestamps the rider', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.game.passengers = [];
+  G.spawnPassenger(0);
+  const p = normalize(G.game.passengers.at(-1));
+  p.dest = 2;
+  p.size = 1;
+  openDoorsAt(G, 0);
+
+  G.update(1 / 60);
+
+  assert.equal(p.state, 'riding', 'boarding finishes on the same update; there is no non-riding transition state');
+  assert.equal(G.slotsAboard(), 1, 'the new rider consumes cabin capacity immediately');
+  assert.ok(Number.isFinite(p.boardAt), `boarding records a finite animation timestamp (got ${p.boardAt})`);
+  assert.ok(p.boardAt <= G.game.t, 'the boarding timestamp is not in the future');
+});
+
+test('a crowd calls destinations one at a time', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.game.passengers = [];
+  for (let i = 0; i < 3; i++) {
+    G.spawnPassenger(0);
+    const p = normalize(G.game.passengers.at(-1));
+    p.dest = i + 1;
+  }
+  openDoorsAt(G, 0);
+  G.update(1 / 60);
+
+  const riders = G.game.passengers.filter(p => p.state === 'riding');
+  const audibleNow = riders.filter(p => p.shoutT > 0 && !(p.shoutDelay > 0));
+  assert.equal(audibleNow.length, 1, 'only the first boarding callout starts immediately');
+  assert.ok(riders[1].shoutDelay > 0 && riders[2].shoutDelay > riders[1].shoutDelay,
+    'later riders queue in FIFO order');
+
+  G.update(1);
+  const audibleNext = riders.filter(p => p.shoutT > 0 && !(p.shoutDelay > 0));
+  assert.equal(audibleNext.length, 1, 'the second callout takes over without stacking');
+  assert.equal(audibleNext[0], riders[1]);
+});
+
+test('a newcomer queues behind callouts already in progress', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.game.passengers = [];
+  for (let i = 0; i < 2; i++) {
+    G.spawnPassenger(0);
+    const p = normalize(G.game.passengers.at(-1));
+    p.dest = i + 1;
+  }
+  openDoorsAt(G, 0);
+  G.update(1 / 60);
+
+  const earlier = G.game.passengers.filter(p => p.state === 'riding');
+  assert.equal(earlier.length, 2);
+  assert.equal(earlier.filter(p => p.shoutT > 0 && !(p.shoutDelay > 0)).length, 1,
+    'the first rider is speaking while the second is queued');
+
+  G.spawnPassenger(0);
+  const newcomer = normalize(G.game.passengers.at(-1));
+  newcomer.dest = 3;
+  G.update(1 / 60);
+
+  const audible = G.game.passengers.filter(p => p.state === 'riding'
+    && p.shoutT > 0 && !(p.shoutDelay > 0));
+  assert.equal(newcomer.state, 'riding', 'the newcomer still boards immediately');
+  assert.equal(audible.length, 1, 'boarding later cannot overlap the active callout');
+  assert.equal(audible[0], earlier[0], 'the callout already in progress keeps its turn');
+  assert.ok(newcomer.shoutDelay > earlier[1].shoutDelay,
+    'the newcomer joins the tail behind the rider already queued');
+
+  G.update(1);
+  const secondBeat = G.game.passengers.filter(p => p.state === 'riding'
+    && p.shoutT > 0 && !(p.shoutDelay > 0));
+  assert.deepEqual(secondBeat, [earlier[1]], 'the existing queued rider speaks before the newcomer');
+  G.update(1);
+  const thirdBeat = G.game.passengers.filter(p => p.state === 'riding'
+    && p.shoutT > 0 && !(p.shoutDelay > 0));
+  assert.deepEqual(thirdBeat, [newcomer], 'the newcomer speaks only after the earlier queue clears');
+});
+
+test('delivery exit lasts passengerMoveTime and awards exactly once', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.game.passengers = [];
+  const p = addRider(G, 2, 'normal');
+  openDoorsAt(G, 2);
+
+  G.update(1 / 60);
+  assert.equal(p.state, 'delivered');
+  assert.ok(G.game.passengers.includes(p), 'the delivered rider remains available for the exit animation');
+  assert.ok(Number.isFinite(G.CFG.passengerMoveTime) && G.CFG.passengerMoveTime > 0,
+    `passengerMoveTime is a positive duration (got ${G.CFG.passengerMoveTime})`);
+
+  const awarded = {
+    parts: G.run.parts,
+    shiftParts: G.game.partsThisShift,
+    delivered: G.game.delivered,
+    totalDelivered: G.run.totalDelivered,
+    fareCount: G.game.met.fareCount,
+    saveDeliveries: G.save.stats.deliveries,
+  };
+
+  G.update(G.CFG.passengerMoveTime * 0.5);
+  assert.ok(G.game.passengers.includes(p), 'the rider remains halfway through the exit animation');
+  assert.deepEqual({
+    parts: G.run.parts,
+    shiftParts: G.game.partsThisShift,
+    delivered: G.game.delivered,
+    totalDelivered: G.run.totalDelivered,
+    fareCount: G.game.met.fareCount,
+    saveDeliveries: G.save.stats.deliveries,
+  }, awarded, 'subsequent animation updates cannot award the fare or delivery again');
+
+  G.update(G.CFG.passengerMoveTime * 0.51);
+  assert.ok(!G.game.passengers.includes(p), 'the rider is removed after the configured exit duration');
+  assert.deepEqual({
+    parts: G.run.parts,
+    shiftParts: G.game.partsThisShift,
+    delivered: G.game.delivered,
+    totalDelivered: G.run.totalDelivered,
+    fareCount: G.game.met.fareCount,
+    saveDeliveries: G.save.stats.deliveries,
+  }, awarded, 'removal also leaves the one-time awards unchanged');
+});
+
+test('the final fare closes the shift only after its passenger exits', (G) => {
+  G.run = G.newRun(); G.startShift();
+  G.game.delivered = G.game.quota - 1;
+  G.game.passengers = [];
+  const p = addRider(G, 2, 'normal');
+  openDoorsAt(G, 2);
+
+  G.update(1 / 60);
+  assert.equal(p.state, 'delivered');
+  assert.equal(G.game.state, 'PLAYING', 'quota completion waits while the final rider walks out');
+  const fareAward = {
+    shiftParts: G.game.partsThisShift,
+    delivered: G.game.delivered,
+    totalDelivered: G.run.totalDelivered,
+    fares: G.game.met.fares,
+    fareCount: G.game.met.fareCount,
+    saveDeliveries: G.save.stats.deliveries,
+  };
+  const partsBeforeBonus = G.run.parts;
+
+  G.update(G.CFG.passengerMoveTime * 0.5);
+  assert.equal(G.game.state, 'PLAYING', 'the shift remains live midway through the exit');
+  assert.ok(G.game.passengers.includes(p));
+  assert.deepEqual({
+    shiftParts: G.game.partsThisShift,
+    delivered: G.game.delivered,
+    totalDelivered: G.run.totalDelivered,
+    fares: G.game.met.fares,
+    fareCount: G.game.met.fareCount,
+    saveDeliveries: G.save.stats.deliveries,
+  }, fareAward, 'the lingering final rider cannot repeat its fare or delivery');
+
+  G.update(G.CFG.passengerMoveTime * 0.51);
+  assert.equal(G.game.state, 'SHIFT_DONE', 'the result appears as soon as the exit finishes');
+  assert.ok(!G.game.passengers.includes(p));
+  assert.deepEqual({
+    shiftParts: G.game.partsThisShift,
+    delivered: G.game.delivered,
+    totalDelivered: G.run.totalDelivered,
+    fares: G.game.met.fares,
+    fareCount: G.game.met.fareCount,
+    saveDeliveries: G.save.stats.deliveries,
+  }, fareAward, 'closing the shift does not repeat the final fare or delivery');
+  assert.equal(G.run.parts, partsBeforeBonus + G.game.bonus, 'the survival bonus is added once');
+
+  const closed = { parts: G.run.parts, shifts: G.save.stats.shifts };
+  G.update(G.CFG.passengerMoveTime);
+  assert.deepEqual({ parts: G.run.parts, shifts: G.save.stats.shifts }, closed,
+    'later result-screen updates cannot repeat the survival bonus or shift award');
+});
+
+test('passenger roles have non-color drawing cues', (G) => {
+  G.run = G.newRun(); G.startShift();
+  const signature = (kind) => {
+    const p = {
+      id: 1, kind, vip: kind === 'vip', size: kind === 'mover' ? 2 : 1,
+      patience: 10, patienceMax: 10, bob: 0, skin: 0, coat: 0, hat: -1,
+      origin: 0, dest: 2, reveal: 0, shoutT: 0,
+    };
+    G._resetCtxCalls();
+    G.drawPassenger(p, 100, 100, 'waiting', 'body');
+    return G._ctxCalls.map(call => call.method).join(',');
+  };
+
+  const normal = signature('normal');
+  for (const kind of ['vip', 'tipper', 'mover', 'nervous']) {
+    assert.notEqual(signature(kind), normal, `${kind} has a shape/accessory cue independent of its coat color`);
+  }
+});
+
+test('touch passenger tags are larger than desktop tags', (G) => {
+  G.run = G.newRun(); G.startShift();
+  const p = {
+    id: 1, kind: 'normal', vip: false, size: 1,
+    patience: 10, patienceMax: 10, bob: 0, skin: 0, coat: 0, hat: -1,
+    origin: 0, dest: 2, reveal: 0, shoutT: 0,
+  };
+  const tagRect = (touch) => {
+    G.touchEnabled = touch;
+    G._resetCtxCalls();
+    G.drawPassenger(p, 100, 100, 'waiting', 'ui');
+    const rect = G._ctxCalls.find(call => call.method === 'fillRect');
+    assert.ok(rect, 'the destination tag draws a background rectangle');
+    return { width: rect.args[2], height: rect.args[3] };
+  };
+
+  const desktop = tagRect(false);
+  const touch = tagRect(true);
+  assert.ok(touch.width > desktop.width, `touch tag is wider (${touch.width} > ${desktop.width})`);
+  assert.ok(touch.height > desktop.height, `touch tag is taller (${touch.height} > ${desktop.height})`);
+});
+
+test('passenger tags stay fixed while bodies bob and panic', (G) => {
+  G.run = G.newRun(); G.startShift();
+  const p = {
+    id: 7, kind: 'nervous', vip: false, size: 1,
+    patience: 1, patienceMax: 10, bob: 0, skin: 0, coat: 0, hat: -1,
+    origin: 0, dest: 11, reveal: 0, shoutT: 0,
+  };
+  const tagPosition = () => {
+    G._resetCtxCalls();
+    G.drawPassenger(p, 100, 100, 'waiting', 'ui');
+    return G._ctxCalls.find(call => call.method === 'fillRect').args.slice(0, 4);
+  };
+  const before = tagPosition();
+  p.bob = Math.PI / 2;
+  G.game.t += 0.37;
+  const after = tagPosition();
+  assert.deepEqual(after, before, 'destination UI ignores cosmetic body movement');
 });
 
 test('delivering a rider at its floor pays a fare', (G) => {
@@ -89,12 +405,13 @@ test('a walk-off costs a strike; a Spare Fuse forgives the first', (G) => {
   assert.equal(G.game.strikes, 1, 'no fuse left → real strike');
 });
 
-test('hitting quota completes the shift with a bonus', (G) => {
+test('hitting quota completes the shift with a bonus after the final exit', (G) => {
   G.run = G.newRun(); G.startShift();
   G.game.delivered = G.game.quota - 1;
   G.game.passengers = []; addRider(G, 2, 'normal');
   openDoorsAt(G, 2);
-  G.step(3);
+  G.update(1 / 60);
+  G.update(G.CFG.passengerMoveTime + 1 / 60);
   assert.equal(G.game.state, 'SHIFT_DONE');
   assert.ok(G.game.bonus > 0, 'a survival bonus is awarded');
 });
@@ -204,7 +521,9 @@ test('a pending level-up resolves before the shift can end', (G) => {
   G.step(1);
   assert.equal(G.game.state, 'LEVELUP', 'the pick comes first');
   G.pickLevel(G.game.levelUp.choices[0]);
-  G.step(2);
+  G.update(1 / 60);                                    // starts the final visual beat
+  assert.equal(G.game.state, 'PLAYING', 'the exit beat begins only after the pick');
+  G.update(G.CFG.passengerMoveTime + 1 / 60);
   assert.equal(G.game.state, 'SHIFT_DONE', 'then the shift closes');
 });
 
@@ -633,7 +952,8 @@ test('a survived shift writes a flight-recorder entry with the tuning signals', 
   openDoorsAt(G, 2);
   G.step(3);
   G.game.delivered = G.game.quota;
-  G.step(2);
+  G.update(1 / 60);                                    // start quota exit beat
+  G.update(G.CFG.passengerMoveTime + 1 / 60);
   const recs = G.metricsAll().filter(r => r.type === 'shift');
   assert.equal(recs.length, 1, 'one shift record');
   const r = recs[0];
@@ -939,7 +1259,8 @@ test('opening the doors seats the car level with the floor', (G) => {
 test('surviving a shift persists lifetime stats immediately', (G) => {
   G.run = G.newRun(); G.startShift();
   G.game.delivered = G.game.quota;
-  G.update(1 / 60);                    // endShift('quota') fires
+  G.update(1 / 60);                    // starts the final visual beat
+  G.update(G.CFG.passengerMoveTime + 1 / 60); // endShift('quota') fires
   assert.equal(G.game.state, 'SHIFT_DONE');
   const reloaded = G.loadSave();
   assert.equal(reloaded.stats.shifts, 1, 'shift recorded on disk before the run ends');
@@ -1061,7 +1382,9 @@ test('a spotless shift unlocks "Spotless"', (G) => {
   G.run = G.newRun(); G.startShift();
   G.game.delivered = G.game.quota - 1;
   G.game.passengers = []; addRider(G, 2, 'normal');
-  openDoorsAt(G, 2); G.step(3);
+  openDoorsAt(G, 2);
+  G.update(1 / 60);
+  G.update(G.CFG.passengerMoveTime + 1 / 60);
   assert.equal(G.game.state, 'SHIFT_DONE');
   assert.ok(G.save.ach.perfect, 'no walk-offs → Spotless');
 });
@@ -1216,7 +1539,8 @@ test('maze stick reaches full speed at 75% deflection (measured parity curve)', 
 test('the shop posts tomorrow\'s forecast, and the next shift honours it', (G) => {
   G.run = G.newRun(); G.startShift();
   G.game.delivered = G.game.quota;
-  G.update(1 / 60);                                       // quota met → SHIFT_DONE
+  G.update(1 / 60);                                       // quota met → exit beat
+  G.update(G.CFG.passengerMoveTime + 1 / 60);             // exit beat → SHIFT_DONE
   assert.equal(G.game.state, 'SHIFT_DONE');
   assert.ok(Array.isArray(G.run.nextMods), 'tomorrow was rolled at shift end');
   const rush = G.MODIFIERS.find(m => m.key === 'rush');

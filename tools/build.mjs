@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
-const SRC_FILES = ['data.js', 'sim.js', 'maze.js', 'render.js', 'audio.js', 'main.js'];
+const SRC_FILES = ['assets.js', 'data.js', 'sim.js', 'maze.js', 'render.js', 'audio.js', 'main.js'];
 const hash = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 10);
 
 fs.rmSync(dist, { recursive: true, force: true });
@@ -40,6 +40,18 @@ if (fs.existsSync(audioSrc)) {
   }
 }
 
+// Copy only runtime landmark masters. The larger source atlases and keyed
+// generation proofs live under assets/concepts/ for provenance, but are not
+// shipped to players.
+let assetCount = 0;
+const landmarksSrc = path.join(root, 'assets', 'landmarks');
+if (fs.existsSync(landmarksSrc)) {
+  const landmarksDist = path.join(dist, 'assets', 'landmarks');
+  fs.cpSync(landmarksSrc, landmarksDist, { recursive: true });
+  assetCount = fs.readdirSync(landmarksSrc, { withFileTypes: true })
+    .filter(entry => entry.isFile()).length;
+}
+
 // rewrite index.html: one hashed script, hashed css, and DROP the no-store meta
 // (the hashed filenames are what bust the cache now — the browser may cache them
 // immutably, and a code change yields a new filename).
@@ -51,4 +63,4 @@ html = html.replace(/\s*<script src="src\/[^"]*"><\/script>/g, '');
 html = html.replace('</body>', `<script src="${jsName}"></script>\n</body>`);
 fs.writeFileSync(path.join(dist, 'index.html'), html);
 
-console.log(`built dist/ → ${jsName} (${(js.length / 1024).toFixed(1)} KB), ${cssName}, ${audioCount} audio file(s)`);
+console.log(`built dist/ → ${jsName} (${(js.length / 1024).toFixed(1)} KB), ${cssName}, ${audioCount} audio file(s), ${assetCount} asset file(s)`);

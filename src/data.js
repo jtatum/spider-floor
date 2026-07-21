@@ -40,6 +40,7 @@ const CFG = {
   alignTolerance: 16,
   stopSpeed: 22,
   rememberTime: 2.8,      // seconds a rider's floor stays "remembered"
+  passengerMoveTime: 0.42,// cosmetic walk into/out of the cabin; state changes stay immediate
   strikesAllowed: 3,
   // ── leveling (the Vampire-Survivors heartbeat): deliveries → XP → pick-1-of-3 ──
   xpDeliver: 9,           // flat XP per delivery
@@ -119,7 +120,9 @@ function gainXP(amount) {
 // memory from last time). The landmark is your only wayfinding: there are no
 // painted numbers. There are more landmarks than floors, so each run also draws
 // a different *subset*.
-const FLOOR_LABELS = ['L', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', 'PH'];
+// The tower culminates at an executive landing rather than an American-style
+// penthouse; the counter and passenger tags still use plain, readable UI copy.
+const FLOOR_LABELS = ['L', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
 const MAX_FLOORS = FLOOR_LABELS.length;
 const LANDMARKS = ['red', 'plant', 'fire', 'art', 'blue', 'crack', 'clock', 'vend',
                    'green', 'window', 'penthouse', 'mirror', 'neon', 'pipes', 'cat', 'aquarium'];
@@ -374,7 +377,7 @@ const ACHIEVEMENTS = [
   { key: 'maxOut3',   name: 'Fully Loaded',              desc: 'Max 6 upgrades in one run.',               award: 12, test: s => s.bestMaxedRun >= 6 },
   { key: 'slay100',   name: "Arachnophobe's Revenge",    desc: 'Slay 400 spiders (lifetime).',             award: 14, test: s => s.spiders >= 400 },
   { key: 'perks12',   name: 'Master of the House',       desc: 'Own 12 perk levels.',                      award: 12, test: s => s.perks >= 12 },
-  { key: 'climb',     name: 'The Long Climb',            desc: 'Climb past the penthouse to face the truth.', award: 4, test: s => s.bossTries >= 1 },
+  { key: 'climb',     name: 'The Long Climb',            desc: 'Climb past the executive floor to face the truth.', award: 4, test: s => s.bossTries >= 1 },
   { key: 'cutCord',   name: 'Cut the Cord',              desc: 'Defeat the spider that controls the lift.', award: 30, test: s => s.bossWins >= 1 },
   // ── the heat ladder ──
   { key: 'heat1',     name: 'Hotter Days',               desc: 'Cut the cord at heat 1.',                  award: 8,  test: s => s.heatCleared >= 1 },
@@ -609,6 +612,7 @@ function startShift() {
     shake: 0,
     flash: null,
     shiftTime: 0,
+    quotaExitUntil: 0,                // brief frozen beat so the final rider can leave on screen
     banner: null,
     introT,
     modifiers,
@@ -726,4 +730,3 @@ function endShift(reason) {
     levelEnd: run.level, levelsGained: run.level - (met.levelStart || 0),
   });
 }
-
