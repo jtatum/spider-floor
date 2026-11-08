@@ -39,6 +39,7 @@ const SHIM = `
   enterBoss, updateBoss, exitBoss, BOSS,
   genMaze, bfsDistances, tryMove, screenDirToWorld, enterMaze, finishMaze, updateMaze, mazeWalkable,
   spawnMazeSpider, openCocoon, MAZE_SPEED,
+  handleKey,
   get mazeStick(){return mazeStick}, set mazeStick(v){mazeStick=v},
   get touchEnabled(){return touchEnabled}, set touchEnabled(v){touchEnabled=v},
   stopSpeedNow,
@@ -107,6 +108,9 @@ export function makeGame(options = {}) {
     document: { getElementById: () => canvas, createElement: fakeEl, body: { appendChild() {} } },
     window: win,
     performance: { now: () => 0 },
+    // the page URL; tests pass e.g. { search: '?dev' } to opt into dev shortcuts
+    location: { search: options.search || '' },
+    URLSearchParams,
     localStorage,
     requestAnimationFrame: () => 0,
     cancelAnimationFrame: () => {},

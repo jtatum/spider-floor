@@ -4,6 +4,10 @@
 // ──────────────────────────────────────────────────────────────── input
 
 const keys = new Set();
+// Dev-only shortcuts (X on the title → straight into a Spider Floor visit) stay
+// off in the published build unless the page is opened with ?dev.
+const devMode = typeof location !== 'undefined' &&
+  new URLSearchParams(location.search).has('dev');
 window.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (k === ' ' || k === 'arrowup' || k === 'arrowdown' || k === 'arrowleft' ||
@@ -111,9 +115,10 @@ function handleKey(k) {
     if (k === 'w') { menu = 'WORKSHOP'; }
     if (k === 'a') { menu = 'ACH'; }
     if (k === 's') { menu = 'SETTINGS'; }
-    // DEV: jump straight into the webbed office (the live Spider Floor) for
-    // playtesting, without waiting for a shaft window to roll.
-    if (k === 'x') { run = newRun(save.lastOperator || 'sal'); startShift(); enterMaze(); }
+    // DEV (?dev only): jump straight into the webbed office (the live Spider
+    // Floor) for playtesting, without waiting for a shaft window to roll. Off by
+    // default — it silently starts a run and bumps real spiderVisits/achievements.
+    if (k === 'x' && devMode) { run = newRun(save.lastOperator || 'sal'); startShift(); enterMaze(); }
     return;
   }
   if (st === 'SETTINGS') {
