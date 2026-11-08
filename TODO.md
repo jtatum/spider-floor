@@ -54,7 +54,7 @@ Key decisions (agreed direction):
 - Exit door uses the same green glow + arrow language as the main game.
 
 Build plan — ALL THREE SESSIONS SHIPPED. The maze IS the Spider Floor now; the
-old 1D ledge is deleted. X on the title = dev shortcut straight into a visit.
+old 1D ledge is deleted. X on the title (with `?dev`) = dev shortcut straight into a visit.
 - [x] Session 1: maze gen + connectivity tests, iso renderer, camera, 2D movement
 - [x] Session 2: flow-field swarm, auto-sword cleave, cocoons (◆/heart/fuse + XP),
       exit + banking, OVERWHELMED → strike
@@ -118,9 +118,9 @@ Open follow-ups:
 - [ ] **More building events** — flooded floor, stuck celebrity, rival operator…
       the Spider Floor taught players to expect a haunted building; deliver a
       second ghost.
-- [ ] **Gate the X dev shortcut** before sharing the link — it ships enabled on
-      the title, silently starts a run, and bumps real spiderVisits/achievements.
-      (Keep it behind e.g. `?dev` or a triple-tap; it's too useful to delete.)
+- [x] **Gate the X dev shortcut** before sharing the link — it shipped enabled on
+      the title, silently started a run, and bumped real spiderVisits/achievements.
+      Now it only fires when the page is opened with `?dev`.
 - [ ] **Landmark language ideas from the audit** — a NEW IN TOWN modifier where
       riders shout the LANDMARK not the number ('the cat floor!'); replace two of
       the three same-shape colored doors (red/blue/green) with distinct fixtures.

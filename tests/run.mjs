@@ -1589,5 +1589,18 @@ test('the spider floor rumbles ~8s before it opens — and only if it will open'
   assert.equal(sp.rumble, 0, '…so the building settles instead of teasing');
 });
 
+test('the X dev shortcut is off on the title unless the page has ?dev', (G) => {
+  const before = G.save.stats.spiderVisits;
+  assert.equal(G.game ? G.game.state : 'TITLE', 'TITLE');
+  G.handleKey('x');
+  assert.notEqual(G.game && G.game.state, 'MAZE', 'a stray X does not start a hidden run');
+  assert.equal(G.save.stats.spiderVisits, before, 'and does not bump a real stat');
+
+  const D = makeGame({ search: '?dev' });
+  D.handleKey('x');
+  assert.equal(D.game.state, 'MAZE', 'with ?dev, X still jumps straight into a visit');
+  assert.equal(D.save.stats.spiderVisits, before + 1);
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
